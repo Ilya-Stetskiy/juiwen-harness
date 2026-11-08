@@ -144,6 +144,9 @@ def test_batching_and_judge():
     assert batching.batch_size() == 1
     with Env(HARNESS_BATCH_SIZE="4"):
         assert batching.batch_size() == 4
+    assert "never hard-code" not in batching.system_prompt(2)
+    with Env(HARNESS_BATCH_PROMPT="compute"):
+        assert "never hard-code" in batching.system_prompt(2)
     with Env(HARNESS_BATCH_SIZE="99"):
         assert batching.batch_size() == 8
     tasks = [task(f"t{i}", instr=f"What is {i} + 1?") for i in range(3)]

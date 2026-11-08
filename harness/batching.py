@@ -4,6 +4,9 @@
                                         from the scheduler and sends them in a single request.
     HARNESS_BATCH_TYPES=math            task types that may be batched (only types without per-task documents make sense).
     HARNESS_BATCH_FALLBACK=single|skip  a task whose line is missing or unparsable: run it alone (default) or give up.
+    HARNESS_BATCH_PROMPT=plain|compute  plain: "print the answers" (the model tends to print guesses, accuracy drops with
+                                        the batch size, see the S11 report); compute: one numbered step-by-step computation
+                                        per problem inside the program, nothing hard-coded.
 
 The model writes ONE program that prints N lines, line i = the bare answer of problem i; the harness runs it and
 splits the lines. One failing problem does not lose the others: only the missing lines are run alone. The tokens of a
@@ -21,6 +24,17 @@ from .pipelines import clean_instruction, extract_code, run_python
 
 SYSTEM = ("Solve all the problems below. Write ONE Python program that prints exactly {n} lines: line i is the bare final "
           "answer of problem i (a number or a short value, no words). Return only the program in one ```python block.")
+
+
+SYSTEM_COMPUTE = ("Solve all the problems below. Write ONE Python program with a separate section per problem: for each "
+                  "problem compute the answer step by step from the given numbers (name the intermediate quantities in "
+                  "variables; never hard-code a result) and print it. The program must print exactly {n} lines: line i is the "
+                  "bare final answer of problem i (a number or a short value, no words). Return only the program in one "
+                  "```python block.")
+
+
+def system_prompt(n: int) -> str:
+    return (SYSTEM_COMPUTE if os.environ.get("HARNESS_BATCH_PROMPT", "plain").strip() == "compute" else SYSTEM).format(n=n)
 
 
 def batch_size() -> int:
@@ -41,7 +55,7 @@ async def solve_batch(ctx: CallContext, tasks: list) -> dict[str, str | None]:
     prev = None
     for _ in range(2):
         prompt = user if prev is None else (f"{user}\n\nYour previous program printed {prev} instead of {n} lines. Fix it.")
-        reply = await ask(ctx, SYSTEM.format(n=n), prompt, 300 * n + 300)
+        reply = await ask(ctx, system_prompt(n), prompt, 300 * n + 300)
         import tempfile
         with tempfile.TemporaryDirectory(prefix="b_") as tmp:
             rc, out = await run_python(extract_code(reply), tmp)
