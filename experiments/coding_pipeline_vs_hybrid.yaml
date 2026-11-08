@@ -1,0 +1,18 @@
+name: coding_pipeline_vs_hybrid
+hypothesis: >
+  The scripted coding pipeline alone (fallback off) is cheaper, and the fallback tool agent (fallback on) adds solved
+  answerable tasks but, on unanswerable tasks, invents "fixes" and burns about 8 000 tokens per task. Stream data on
+  ~590 coding cells: pipeline only 48% (mbpp counts as 0 because its format does not match), with fallback 84%,
+  unanswerable tasks 100% vs 69%. Only codegen_fix is used: its format matches the organizers' task (fix bugs in a
+  module, run its test file) and it is the only source with unanswerable tasks, which the question needs.
+backend: gateway
+model: qwen3.6-35b-a3b-noreason
+tasks: {coding: 36}
+sources: {coding: [codegen_fix]}
+repeats: 2
+seed: 17
+arms:
+  pipeline:
+    env: {HARNESS_FALLBACK: "off"}
+  hybrid:
+    env: {HARNESS_FALLBACK: "on"}

@@ -204,6 +204,26 @@ def bootstrap_ci(diffs: list[float], n: int = 4000, seed: int = 7) -> tuple[floa
     return means[int(0.025 * n)], means[int(0.975 * n) - 1]
 
 
+def group_labels(cells: list[dict]) -> list[str]:
+    """all, every type, and answerable / unanswerable halves of a type that has both."""
+    types = sorted({c["type"] for c in cells})
+    labels = ["all"] + types
+    for t in types:
+        if len({bool(c["unanswerable"]) for c in cells if c["type"] == t}) == 2:
+            labels += [f"{t} answerable", f"{t} unanswerable"]
+    return labels
+
+
+def in_group(c: dict, label: str) -> bool:
+    if label == "all":
+        return True
+    if label.endswith(" unanswerable"):
+        return c["type"] == label[:-13] and bool(c["unanswerable"])
+    if label.endswith(" answerable"):
+        return c["type"] == label[:-11] and not c["unanswerable"]
+    return c["type"] == label
+
+
 def make_report(name: str) -> str:
     d = RESULTS / name
     meta = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
@@ -219,8 +239,8 @@ def make_report(name: str) -> str:
               "| arm | type | cells | accuracy | sd between repeats | tokens/task | tokens per correct |",
               "|---|---|---|---|---|---|---|"]
     for a in arms:
-        for t in ["all"] + sorted({c["type"] for c in good}):
-            sel = [c for c in good if c["arm"] == a and (t == "all" or c["type"] == t)]
+        for t in group_labels(good):
+            sel = [c for c in good if c["arm"] == a and in_group(c, t)]
             if not sel:
                 continue
             per_rep = collections.defaultdict(list)
@@ -244,11 +264,11 @@ def make_report(name: str) -> str:
         def per_task(a, t):
             acc = collections.defaultdict(list)
             for c in good:
-                if c["arm"] == a and (t == "all" or c["type"] == t):
+                if c["arm"] == a and in_group(c, t):
                     acc[c["task_id"]].append(c["correct"])
             return {k: sum(v) / len(v) for k, v in acc.items()}
         for a in arms[1:]:
-            for t in ["all"] + sorted({c["type"] for c in good}):
+            for t in group_labels(good):
                 x, y = per_task(a, t), per_task(base, t)
                 ids = sorted(set(x) & set(y))
                 if len(ids) < 5:
