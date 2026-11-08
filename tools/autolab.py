@@ -146,7 +146,7 @@ Models: qwen3.6-35b-a3b-noreason, qwen3.6-35b-a3b, qwen3.8-27b-noreason, qwen3.8
 Propose {n} different hypotheses likely to be useful. Each: JSON object with keys
 name (snake_case, unique, start with ab_), hypothesis (2-4 sentences: what changes, why, what you expect, how it can fail),
 set (one of the sets above), model (one model or auto), repeats (1 or 2), budget (integer, at most 100000),
-arms (object: arm name -> {{env: {{SWITCH: "value"}}, batch_size: optional int}}); the FIRST arm is the reference with an empty env,
+arms (object: arm name -> {{env: {{SWITCH: "value"}}, batch_size: optional int}}); the FIRST arm is the reference (the behaviour you compare against; its env may be empty or hold the current best setting),
 expected_cost_tokens (your estimate of the gateway tokens the whole experiment needs), code_change (empty string unless an existing switch cannot express it).
 Return a JSON list of {n} objects and nothing else."""
 
@@ -171,9 +171,6 @@ def validate(h: dict) -> list[str]:
     if not isinstance(arms, dict) or not 2 <= len(arms) <= 4:
         errs.append("2-4 arms")
         return errs
-    first = next(iter(arms.values())) or {}
-    if first.get("env"):
-        errs.append("the first arm must be the reference (empty env)")
     ks = known_switches()
     for a, v in arms.items():
         for k in (v or {}).get("env") or {}:
@@ -366,8 +363,8 @@ def selftest() -> None:
     (EXP / "sets").mkdir()
     (EXP / "sets" / "math16.yaml").write_text("role: dev\ntasks: {math: 16}\nseed: 1\n")
     assert validate(good) == [] or all("unknown switch" in e for e in validate(good)), validate(good)
-    bad = dict(good, arms={"base": {"env": {"HARNESS_VERIFY": "judge"}}, "v": {}})
-    assert any("reference" in e for e in validate(bad))
+    bad = dict(good, arms={"base": {"env": {"HARNESS_NOPE": "1"}}, "v": {}})
+    assert any("unknown switch" in e for e in validate(bad))
     assert any("not an available" in e for e in validate(dict(good, set="mixed100_holdout")))
     assert extract_json('text [{"a": 1}] tail') == [{"a": 1}]
     print("autolab selftest ok")
