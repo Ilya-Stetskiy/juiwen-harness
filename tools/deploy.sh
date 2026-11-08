@@ -6,7 +6,8 @@
 #   * refuses to run with uncommitted changes (the stamp must describe the code that really runs);
 #   * refuses to overwrite host files that were edited by hand after the previous deploy (it compares the host tree
 #     with the previously deployed commit); --force overrides;
-#   * copies `git archive HEAD` into ~/harness-lab/harness, lab.py and experiments/ into ~/harness-lab;
+#   * copies `git archive HEAD` into ~/harness-lab/harness (this includes tools/sim.py), lab.py, experiments/*.yaml and
+#     experiments/sets/ into ~/harness-lab (queue/ and results/ are never overwritten);
 #   * never touches ~/harness-lab/stream_run.py or local_shim.py (the stream session maintains those);
 #   * writes ~/harness-lab/harness/VERSION (hash + date) which lab.py records in every experiment manifest.
 set -eu
@@ -41,5 +42,7 @@ git archive HEAD | ssh "$HOST" "mkdir -p $DEST/harness && tar -x -C $DEST/harnes
 ssh "$HOST" "mkdir -p $DEST/experiments"
 scp -q tools/lab.py "$HOST:harness-lab/lab.py"            # scp paths are relative to the home directory
 scp -q experiments/*.yaml "$HOST:harness-lab/experiments/"
+ssh "$HOST" "mkdir -p $DEST/experiments/sets $DEST/experiments/queue/pending $DEST/experiments/queue/running $DEST/experiments/queue/done"
+scp -q experiments/sets/*.yaml "$HOST:harness-lab/experiments/sets/"   # frozen sets (never touches queue/ or results/)
 ssh "$HOST" "echo '$NEW $(date +%Y-%m-%dT%H:%M:%S)' > $DEST/harness/VERSION"
 echo "deployed $NEW (previous: ${OLD:-none})"
