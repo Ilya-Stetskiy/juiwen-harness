@@ -527,7 +527,7 @@ def batch_table(d: Path, good: list[dict], meta: dict) -> list[str]:
     out = ["", "## Batching (S11)", "",
            "Requests = `llm_call` events per task (the gateway allows 60 per minute). Failed lines of a batch are re-run alone and "
            "counted in the tokens and requests.", "",
-           "| arm | batch size | tasks | accuracy | tokens/task | requests/task | batches | tasks run alone after a failed line |",
+           "| arm | batch size | tasks | accuracy | tokens/task | requests/task | batches | task runs alone (pipeline) |",
            "|---|---|---|---|---|---|---|---|"]
     for a in sorted(meta["arms"], key=lambda x: sizes[x]):
         sel = [c for c in good if c["arm"] == a]
@@ -536,9 +536,9 @@ def batch_table(d: Path, good: list[dict], meta: dict) -> list[str]:
         ev = journal_events(d, a, sorted({c["repeat"] for c in sel}))
         calls = sum(e["event"] == "llm_call" for e in ev)
         batches = [e for e in ev if e["event"] == "batch"]
-        alone = sum(1 for e in ev if e["event"] == "pipeline_done") - sum(e["size"] for e in batches) if batches else 0
+        alone = sum(e["event"] == "variant" for e in ev)    # the ordinary pipeline announces its variant once per task it runs
         out.append(f"| {a} | {sizes[a]} | {len(sel)} | {sum(c['correct'] for c in sel) / len(sel):.3f} | "
-                   f"{sum(c['hybrid_cost'] for c in sel) / len(sel):.1f} | {calls / len(sel):.2f} | {len(batches)} | {max(alone, 0)} |")
+                   f"{sum(c['hybrid_cost'] for c in sel) / len(sel):.1f} | {calls / len(sel):.2f} | {len(batches)} | {alone} |")
     return out
 
 

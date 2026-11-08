@@ -33,6 +33,11 @@ SYSTEM_COMPUTE = ("Solve all the problems below. Write ONE Python program with a
                   "```python block.")
 
 
+def per_problem_tokens() -> int:
+    """Reply budget per problem: the step-by-step program of the compute prompt needs about 350, the plain one 300 (batch_math_compute: 8 problems at 300 each were cut)."""
+    return 600 if os.environ.get("HARNESS_BATCH_PROMPT", "plain").strip() == "compute" else 300
+
+
 def system_prompt(n: int) -> str:
     return (SYSTEM_COMPUTE if os.environ.get("HARNESS_BATCH_PROMPT", "plain").strip() == "compute" else SYSTEM).format(n=n)
 
@@ -55,7 +60,7 @@ async def solve_batch(ctx: CallContext, tasks: list) -> dict[str, str | None]:
     prev = None
     for _ in range(2):
         prompt = user if prev is None else (f"{user}\n\nYour previous program printed {prev} instead of {n} lines. Fix it.")
-        reply = await ask(ctx, system_prompt(n), prompt, 300 * n + 300)
+        reply = await ask(ctx, system_prompt(n), prompt, per_problem_tokens() * n + 300)
         import tempfile
         with tempfile.TemporaryDirectory(prefix="b_") as tmp:
             rc, out = await run_python(extract_code(reply), tmp)
