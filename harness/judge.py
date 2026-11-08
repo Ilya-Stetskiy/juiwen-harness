@@ -59,6 +59,13 @@ def free_p(task, answer, context: dict) -> tuple[float, str]:
         return _placeholder(task, answer, context)
 
 
+def judge_types() -> set[str]:
+    """HARNESS_VERIFY_JUDGE_TYPES (default math,data_analysis,coding): task types that get the LLM judge in judge mode;
+    the other types use the free level only (the verifier session found the judge useless on search)."""
+    raw = os.environ.get("HARNESS_VERIFY_JUDGE_TYPES", "math,data_analysis,coding")
+    return {t.strip() for t in raw.split(",") if t.strip()}
+
+
 def verdict(p: float) -> str:
     """Three verdicts: accept | recheck | unsolvable. HARNESS_VERIFY_ACCEPT (default = HARNESS_VERIFY_MIN, 0.5) is the
     lowest p that is accepted; HARNESS_VERIFY_GIVEUP (default 0 = never) is the p below which no more tokens are spent."""
@@ -92,6 +99,8 @@ async def verify_answer(ctx, task, answer: str | None) -> dict | None:
     p_free, level = free_p(task, answer, context)
     p = p_free
     ver = _verifier()
+    if m == "judge" and task.task_type not in judge_types():   # e.g. search: the judge adds nothing there (AUC 0.5-0.6)
+        m = "free"
     spec = ver.judge_prompt(task, answer, context) if (m == "judge" and ver is not None) else None
     if m == "judge" and spec is not None:
         # the judge of the verifier session: its prompt and parser, its fitted model uses judge_yes (and the quote checks)
