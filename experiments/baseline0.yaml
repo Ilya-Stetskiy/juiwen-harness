@@ -8,7 +8,7 @@ hypothesis: >
 backend: gateway
 model: auto
 set: baseline0   # experiments/sets/baseline0.yaml, frozen, hash ebf1bc16da65
-repeats: 2
+repeats: 3   # third repeat added 2026-11-09 for the noise floor (S6)
 budget: 100000
 arms:
   as_is:
