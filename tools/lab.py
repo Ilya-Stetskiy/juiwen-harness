@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import json
 import os
 import random
@@ -46,6 +47,14 @@ sr.TAG = "_lab"          # state and log files of the shared sampler must not co
 
 class Abort(Exception):
     pass
+
+
+def code_version() -> str:
+    """Git hash of the deployed harness (written by tools/deploy.sh), so a result can be tied to its code."""
+    try:
+        return (LAB / "harness" / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        return "unknown (not deployed with deploy.sh)"
 
 
 def say(msg: str) -> None:
@@ -85,13 +94,18 @@ def build_task_set(e: dict, out: Path) -> dict:
     sm = sr.Sampler(int(e["seed"]))
     grading: dict[str, dict] = {}
     for t, n in e["tasks"].items():
-        got, guard = 0, 0
+        got, n_un, guard = 0, 0, 0
         pool = e.get("sources", {}).get(t) or sr.SOURCES[t]
-        while got < n and guard < n * 50:
+        quota = (e.get("unanswerable") or {}).get(t)   # exact number of unanswerable tasks of this type, if given
+        while got < n and guard < n * 300:
             guard += 1
             r = sm.next_row(sm.rng.choice(pool))
             if r is None or r["task_id"] in grading:
                 continue
+            is_un = r["check"] == "unanswerable"
+            if quota is not None and ((is_un and n_un >= quota) or (not is_un and got - n_un >= n - quota)):
+                continue
+            n_un += is_un
             rw = e.get("rewards")
             if rw:  # random but reproducible rewards, as in the competition (points unrelated to difficulty)
                 r["reward"] = random.Random(f"{rw.get('seed', 1)}:{r['task_id']}").randint(int(rw["low"]), int(rw["high"]))
@@ -134,9 +148,13 @@ def check_infrastructure(e: dict) -> str:
 
 # ------------------------------------------------------------------ one harness run
 def run_harness(e: dict, arm: dict, tasks_dir: Path, work: Path, base_url: str) -> None:
-    env = dict(os.environ, HARNESS_FORCE_MODEL=e["model"], LLM_BASE_URL=base_url, LLM_API_KEY="x",
+    env = dict(os.environ, LLM_BASE_URL=base_url, LLM_API_KEY="x",
                HARNESS_CWD=str(work / "cwd"), BUDGET=str(e["budget"]), HARNESS_LOG_DIR=str(work / "logs"),
                HARNESS_WORKERS=str(e["workers"]), HARNESS_LIMITS="off", HARNESS_FALLBACK=str(e["fallback"]))
+    if e["model"] != "auto":   # `model: auto` leaves the choice to the harness, as in the competition
+        env["HARNESS_FORCE_MODEL"] = e["model"]
+    else:
+        env.pop("HARNESS_FORCE_MODEL", None)
     for k, v in {**(e.get("env") or {}), **(arm.get("env") or {})}.items():  # arm overrides experiment-wide env
         env[str(k)] = str(v)
     with open(work / "stderr.txt", "w") as err:
@@ -232,14 +250,83 @@ def in_group(c: dict, label: str) -> bool:
     return c["type"] == label
 
 
+def skip_table(good: list[dict], arms: list[str], runs: list[dict]) -> list[str]:
+    """How well each arm separates unanswerable tasks (no answer written) from answerable ones, and how long it takes."""
+    out = ["", "## Unanswerable tasks and time", "",
+           "Recall: share of unanswerable tasks left without an answer (what the competition wants). Precision: share "
+           "of tasks left without an answer that were really unanswerable (the rest are solvable tasks we gave up). "
+           "Seconds are the mean time per task and the wall time of a whole run.", "",
+           "| arm | unanswerable cells | recall | precision | solvable tasks left unanswered | seconds per task | run seconds |",
+           "|---|---|---|---|---|---|---|"]
+    for a in arms:
+        sel = [c for c in good if c["arm"] == a]
+        un = [c for c in sel if c["unanswerable"]]
+        silent = [c for c in sel if not c["answered"]]
+        hit = [c for c in un if not c["answered"]]
+        gave_up = [c for c in silent if not c["unanswerable"]]
+        secs = [c["seconds"] for c in sel if c.get("seconds") is not None]
+        wall = [r["seconds"] for r in runs if r["arm"] == a]
+        out.append(f"| {a} | {len(un)} | {(len(hit) / len(un)) if un else float('nan'):.3f} | "
+                   f"{(len(hit) / len(silent)) if silent else float('nan'):.3f} | "
+                   f"{len(gave_up) / max(1, len({c['repeat'] for c in sel})):.1f} per run | "
+                   f"{(sum(secs) / len(secs)) if secs else float('nan'):.1f} | "
+                   f"{(sum(wall) / len(wall)) if wall else float('nan'):.0f} |")
+    return out
+
+
+def curve_table(d: Path, good: list[dict], arms: list[str], step: int = 10_000) -> list[str]:
+    """Reward-weighted points reached by the time `x` tokens were spent, from the stored journals (task_end totals)."""
+    jdir = d / "journals"
+    if not jdir.is_dir():
+        return []
+    cell = {(c["arm"], c["repeat"], c["task_id"]): c for c in good}
+    curves: dict[str, list[list[tuple[float, float]]]] = collections.defaultdict(list)
+    for a in arms:
+        for rep in sorted({c["repeat"] for c in good if c["arm"] == a}):
+            f = jdir / f"{a}_{rep}.jsonl"
+            if not f.exists():
+                continue
+            ends = sorted((e for e in map(json.loads, open(f, encoding="utf-8")) if e.get("event") == "task_end"),
+                          key=lambda e: e["ts"])
+            pts, acc = [], 0.0
+            for e in ends:
+                c = cell.get((a, rep, e["task"]))
+                if c is None:
+                    continue
+                acc += c["reward"] * c["correct"]
+                pts.append((e["total"], acc))
+            curves[a].append(pts)
+    if not curves:
+        return []
+    top = max(p[-1][0] for runs_ in curves.values() for p in runs_ if p)
+    levels = list(range(step, int(top // step + 1) * step + 1, step))
+    out = ["", "## Points by tokens spent", "",
+           "Mean over repeats of the points collected by the time the run had spent `x` tokens (a task counts when it "
+           "finished). The last column is the end of the run: final points and total tokens.", "",
+           "| arm | " + " | ".join(f"{x // 1000}k" for x in levels) + " | end (points / tokens) |",
+           "|---|" + "---|" * (len(levels) + 1)]
+    for a, runs_ in curves.items():
+        cols = []
+        for x in levels:
+            vals = [max((p for t, p in run if t <= x), default=0.0) for run in runs_]
+            cols.append(f"{sum(vals) / len(vals):.1f}")
+        end_p = sum(run[-1][1] for run in runs_ if run) / len(runs_)
+        end_t = sum(run[-1][0] for run in runs_ if run) / len(runs_)
+        out.append(f"| {a} | " + " | ".join(cols) + f" | {end_p:.1f} / {end_t:.0f} |")
+    return out
+
+
 def make_report(name: str) -> str:
     d = RESULTS / name
     meta = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
     cells = [json.loads(l) for l in open(d / "cells.jsonl", encoding="utf-8") if l.strip()]
+    runs = [json.loads(l) for l in open(d / "runs.jsonl", encoding="utf-8") if l.strip()] if (d / "runs.jsonl").exists() else []
     arms = list(meta["arms"])
     lines = [f"# Experiment `{name}`", "", f"Hypothesis: {meta.get('hypothesis') or '-'}", "",
              f"Model `{meta['model']}`, backend `{meta['backend']}`, fallback `{meta['fallback']}`, "
-             f"{meta['n_tasks']} tasks {meta['tasks']}, repeats {meta['repeats']}, seed {meta['seed']}.", ""]
+             f"{meta['n_tasks']} tasks {meta['tasks']}, repeats {meta['repeats']}, seed {meta['seed']}.",
+             f"Code version: {meta.get('code_version', 'not recorded')}. Task set: {meta.get('set_hash', 'not recorded')}, "
+             f"unanswerable tasks in the set: {meta.get('n_unanswerable', 'not recorded')}.", ""]
     good = [c for c in cells if not c["infra"]]
     infra = len(cells) - len(good)
     lines.append(f"Cells: {len(cells)}; infrastructure-broken (excluded from scoring): {infra}.")
@@ -264,6 +351,8 @@ def make_report(name: str) -> str:
             ok = sum(c["correct"] for c in sel)
             lines.append(f"| {a} | {t} | {len(sel)} | {acc:.3f} | {points:.1f} | {sd:.3f} | {cost:.1f} | "
                          f"{(sum(c['hybrid_cost'] for c in sel) / ok) if ok else float('nan'):.1f} |")
+    lines += skip_table(good, arms, runs)
+    lines += curve_table(d, good, arms)
     if len(arms) > 1:
         base = arms[0]
         lines += ["", f"## Paired comparison against `{base}`", "",
@@ -320,7 +409,10 @@ def cmd_run(path: Path, dry: bool) -> None:
     grading = build_task_set(e, base)
     manifest = dict(name=name, hypothesis=e["hypothesis"], model=e["model"], backend=e["backend"],
                     fallback=e["fallback"], tasks=e["tasks"], n_tasks=len(grading), repeats=e["repeats"], seed=e["seed"],
-                    arms=e["arms"], task_ids=list(grading), started=time.strftime("%Y-%m-%d %H:%M:%S"))
+                    arms=e["arms"], task_ids=list(grading), started=time.strftime("%Y-%m-%d %H:%M:%S"),
+                    code_version=code_version(), budget=e["budget"], env=e.get("env"),
+                    set_hash=hashlib.sha1("\n".join(sorted(grading)).encode()).hexdigest()[:12],
+                    n_unanswerable=sum(bool(g["unanswerable"]) for g in grading.values()))
     (d / "manifest.json").write_text(json.dumps(manifest, indent=1, ensure_ascii=False), encoding="utf-8")
     cells_path, runs_path = d / "cells.jsonl", d / "runs.jsonl"
     done = {(r["arm"], r["repeat"]) for r in map(json.loads, open(runs_path))} if runs_path.exists() else set()

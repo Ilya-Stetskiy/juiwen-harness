@@ -1,0 +1,21 @@
+name: baseline0
+hypothesis: >
+  Baseline of the harness as it stands, on a mixed set like the competition one: 100 tasks of the four types (25 each),
+  random rewards 1-5, about 18% unanswerable tasks, budget 100 000, and the harness chooses the model itself
+  (model: auto). Nothing has been run on such a set before; every earlier experiment was one type with 36-48 tasks.
+  Two arms differ only in where the tool agent runs: inline (the old default) or as a late second tier.
+  This run is the reference every later hypothesis is compared with; it also shows how often the budget binds.
+backend: gateway
+model: auto
+tasks: {math: 25, search: 25, data_analysis: 25, coding: 25}
+sources: {coding: [humanevalfix, codegen_fix]}
+unanswerable: {coding: 8, search: 10}
+rewards: {low: 1, high: 5, seed: 5}
+repeats: 2
+seed: 31
+budget: 100000
+arms:
+  as_is:
+    env: {HARNESS_FALLBACK: "on"}
+  late:
+    env: {HARNESS_FALLBACK: "late"}
