@@ -6,6 +6,7 @@ tasks in flight are reserved so five parallel workers do not overspend the budge
 """
 from __future__ import annotations
 
+import os
 import threading
 
 from .predictor import Predictor, Prediction
@@ -16,12 +17,18 @@ EMA_ALPHA = 0.3
 
 
 class Scheduler:
+    """Greedy knapsack by reward * p_success / tokens (the default, HARNESS_SORTER=greedy)."""
+
+    def _score(self, order: int, t: TaskInfo, p: Prediction):
+        return t.reward * p.p_success / max(p.tokens_p50, 1.0)
+
     def __init__(self, tasks: list[TaskInfo], models: list[str], predictor: Predictor, budget: float) -> None:
         self._lock = threading.Lock()
         self._predictor = predictor
         self._models = list(models)
         self._budget = budget
         self._remaining: dict[str, TaskInfo] = {}
+        self._order = {t.task_id: i for i, t in enumerate(tasks)}
         self._preds: dict[tuple[str, str], Prediction] = {}
         self._k: dict[tuple[str, str], float] = {}
         self._inflight: dict[str, float] = {}  # task_id -> reserved estimate
@@ -53,7 +60,7 @@ class Scheduler:
                     p = self._corrected(t, m)
                     if p.tokens_p50 > free:
                         continue
-                    ratio = t.reward * p.p_success / max(p.tokens_p50, 1.0)
+                    ratio = self._score(self._order[t.task_id], t, p)
                     if best is None or ratio > best[0]:
                         best = (ratio, t, m, p)
             if best is None:
@@ -62,6 +69,25 @@ class Scheduler:
             del self._remaining[t.task_id]
             self._inflight[t.task_id] = p.tokens_p50
             return t, m, p
+
+    def take_more(self, task_type: str, model: str, k: int, spent: float) -> list[tuple[TaskInfo, Prediction]]:
+        """Up to k more tasks of one type for a batch (S11): best score first, only while they fit into the budget."""
+        out: list[tuple[TaskInfo, Prediction]] = []
+        with self._lock:
+            free = self._budget - spent - sum(self._inflight.values())
+            cand = sorted((t for t in self._remaining.values() if t.task_type == task_type),
+                          key=lambda t: self._score(self._order[t.task_id], t, self._corrected(t, model)), reverse=True)
+            for t in cand:
+                if len(out) >= k:
+                    break
+                p = self._corrected(t, model)
+                if p.tokens_p50 > free:
+                    continue
+                free -= p.tokens_p50
+                del self._remaining[t.task_id]
+                self._inflight[t.task_id] = p.tokens_p50
+                out.append((t, p))
+        return out
 
     def report(self, task: TaskInfo, model: str, actual_cost: float) -> None:
         with self._lock:
@@ -75,3 +101,26 @@ class Scheduler:
     def correction(self) -> dict[str, float]:
         with self._lock:
             return {f"{t}|{m}": round(v, 3) for (t, m), v in self._k.items()}
+
+
+class FifoScheduler(Scheduler):
+    """Variant: tasks in the order they were given, on the cheapest model (HARNESS_SORTER=fifo)."""
+
+    def _score(self, order, t, p):
+        return (-order, -p.tokens_p50)
+
+
+class RewardScheduler(Scheduler):
+    """Variant: highest reward first, on the cheapest model, price ignored (HARNESS_SORTER=reward)."""
+
+    def _score(self, order, t, p):
+        return (t.reward, -p.tokens_p50)
+
+
+SCHEDULERS = {"greedy": Scheduler, "fifo": FifoScheduler, "reward": RewardScheduler}
+
+
+def make_scheduler(tasks, models, predictor, budget):
+    """HARNESS_SORTER=greedy (default) | fifo | reward."""
+    cls = SCHEDULERS.get(os.environ.get("HARNESS_SORTER", "greedy").strip().lower(), Scheduler)
+    return cls(tasks, models, predictor, budget)

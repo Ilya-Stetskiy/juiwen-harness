@@ -6,6 +6,8 @@ tokens_p90, p_success; per task: p_unsolvable.
 """
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import dataclass
 
 from .tasks import TaskInfo
@@ -38,4 +40,48 @@ class Predictor:
         return Prediction(p50, p50 * 2.5, table.get(task.task_type, 0.7))
 
     def p_unsolvable(self, task: TaskInfo) -> float:
+        """HARNESS_PUNSOLV=contradiction: coding tasks whose tests contradict each other (static detector, no tokens)
+        get 1.0 and are skipped by the scheduler without a model call. Default: 0 for every task."""
+        if os.environ.get("HARNESS_PUNSOLV", "off").lower() == "contradiction" and task.task_type == "coding":
+            return 1.0 if _coding_contradiction(task) else 0.0
         return 0.0
+
+
+def _coding_contradiction(task: TaskInfo) -> bool:
+    from .contradiction import find_contradictions
+
+    ws = task.workspace
+    m = re.search(r"python3?\s+(\S+\.py)", task.instruction)
+    if ws is None or not m or not (ws / m.group(1)).is_file():
+        return False
+    return bool(find_contradictions((ws / m.group(1)).read_text(encoding="utf-8", errors="replace")))
+
+
+class FlatPredictor(Predictor):
+    """Variant: every task costs the same (500 tokens, 2000 with reasoning): the sorter degenerates to reward order."""
+
+    def predict(self, task: TaskInfo, model: str) -> Prediction:
+        p50 = 500.0 * (1.0 if model.endswith("-noreason") else _P50_REASON_MULT)
+        return Prediction(p50, p50 * 2.5, 0.7)
+
+
+# Medians measured on the scripted pipelines (SCRIPTS.md section 4, hybrid cost incl. fallback), tokens per task, noreason.
+_MEASURED = {"math": 289.0, "data_analysis": 335.0, "search": 160.0, "coding": 810.0}
+
+
+class MeasuredPredictor(Predictor):
+    """Variant: the placeholder table replaced by measured medians (still one number per type, no task features)."""
+
+    def predict(self, task: TaskInfo, model: str) -> Prediction:
+        thinking = not model.endswith("-noreason")
+        p50 = _MEASURED.get(task.task_type, 1500.0) * (3.0 if thinking else 1.0) + task.workspace_bytes / 40.0
+        table = _P_SUCCESS_REASON if thinking else _P_SUCCESS_NOREASON
+        return Prediction(p50, p50 * 2.5, table.get(task.task_type, 0.7))
+
+
+PREDICTORS = {"placeholder": Predictor, "flat": FlatPredictor, "measured": MeasuredPredictor}
+
+
+def make_predictor() -> Predictor:
+    """HARNESS_PREDICTOR=placeholder (default) | flat | measured."""
+    return PREDICTORS.get(os.environ.get("HARNESS_PREDICTOR", "placeholder").strip().lower(), Predictor)()
