@@ -18,9 +18,10 @@ from harness.answers import write_answer
 from harness.config import MODELS, Config
 from harness.journal import Journal
 from harness.ledger import TokenLedger
-from harness.predictor import Predictor
+from harness import batching, guard
+from harness.predictor import make_predictor
 from harness.solvers import try_solve
-from harness.sorter import Scheduler
+from harness.sorter import make_scheduler
 from harness.tasks import load_tasks
 
 
@@ -36,6 +37,8 @@ async def _worker(wid: int, sched: Scheduler, cfg: Config, ledger: TokenLedger, 
         if nxt is None:
             return
         task, model, pred = nxt
+        if await batching.maybe_batch(task, model, pred, sched, cfg, ledger, journal, state, wid):  # HARNESS_BATCH_SIZE>1
+            continue
         before = ledger.task_cost(task.task_id)
         journal.event("task_start", task=task.task_id, type=task.task_type, model=model,
                       est_p50=round(pred.tokens_p50, 1), worker=wid)
@@ -45,7 +48,7 @@ async def _worker(wid: int, sched: Scheduler, cfg: Config, ledger: TokenLedger, 
             res = await (asyncio.wait_for(coro, cfg.max_task_seconds) if cfg.limits_on else coro)
             status, answer = res.status, res.answer
             if status == "solved" and answer:
-                write_answer(task.dir, answer)
+                write_answer(task.dir, guard.scrub_answer(answer, task.task_id, journal))
                 state["solved"] += 1
         except asyncio.TimeoutError:
             status = "timeout"
@@ -135,7 +138,7 @@ async def amain(tasks_dir: str) -> None:
         rest.append(t)
 
     models = [cfg.force_model] if cfg.force_model else list(MODELS)
-    sched = Scheduler(rest, models, Predictor(), float(cfg.budget))
+    sched = make_scheduler(rest, models, make_predictor(), float(cfg.budget))
     state = {"solved": 0, "deferred": [], "running": {}}
     await asyncio.gather(*[
         _worker(i, sched, cfg, ledger, journal, t_start, state) for i in range(cfg.workers)

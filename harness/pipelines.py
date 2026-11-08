@@ -19,6 +19,7 @@ from pathlib import Path
 from .answers import extract_final, normalize
 from .contradiction import find_contradictions
 from .llm import CallContext, ask
+from . import guard, sandbox
 from .prompts import pick
 
 _DROP = re.compile(r"(answer\.txt|\bbash\b|current directory|python3|file tools|Work only)", re.IGNORECASE)
@@ -39,7 +40,7 @@ def clean_instruction(text: str) -> str:
     text = _BOUNDARY.sub(". ", text.strip())
     parts = re.split(r"(?<=[.!?])\s+", text)
     kept = [p for p in parts if not _DROP.search(p) or _KEEP.search(p)]
-    return " ".join(kept).strip() or text.strip()
+    return guard.sanitize(" ".join(kept).strip() or text.strip())
 
 
 def extract_code(reply: str) -> str:
@@ -49,6 +50,9 @@ def extract_code(reply: str) -> str:
 
 async def run_python(code: str, cwd: str, timeout: float = 30.0) -> tuple[int, str]:
     def _run() -> tuple[int, str]:
+        if sandbox.enabled():   # HARNESS_SANDBOX=scrub|limits (S12); off keeps the plain subprocess below
+            rc, out, err = sandbox.run([sys.executable, "-c", code], cwd, timeout)
+            return rc, out + (("\n" + err) if rc else "")
         try:
             r = subprocess.run([sys.executable, "-c", code], cwd=cwd, capture_output=True, text=True, timeout=timeout)
             return r.returncode, (r.stdout or "") + (("\n" + r.stderr) if r.returncode else "")
@@ -74,6 +78,7 @@ async def _program_answer(ctx: CallContext, system: str, user: str, cwd: str, ma
         reply = await ask(ctx, system, prompt, max_tokens)
         code = extract_code(reply)
         rc, out = await run_python(code, cwd)
+        ctx.extra.setdefault("runs", []).append((code, rc, out))   # for the verifier (harness/judge.py)
         if rc == 0 and multiline:
             # an answer made of several @name[value] lines: every printed line belongs to it
             lines = [ln.strip() for ln in out.strip().splitlines() if ln.strip()]
@@ -132,7 +137,7 @@ def _data_overview(ws: Path) -> str:
         else:
             head += " First lines:\n" + "\n".join(lines[:6])
         chunks.append(head[:3000])
-    return "\n\n".join(chunks)
+    return guard.sanitize("\n\n".join(chunks))
 
 
 async def data_analysis(ctx: CallContext):
@@ -164,7 +169,7 @@ def _read_kb(ws: Path, question: str) -> str | None:
             return None
     if not docs:
         return None
-    return "\n\n".join(f"## {p.name}\n{t.strip()}" for p, t in docs)
+    return guard.sanitize("\n\n".join(f"## {p.name}\n{t.strip()}" for p, t in docs))
 
 
 async def search(ctx: CallContext):
@@ -188,6 +193,9 @@ async def search(ctx: CallContext):
 
 async def _run_tests(cmd_file: str, ws: Path) -> tuple[bool, str]:
     def _run() -> tuple[bool, str]:
+        if sandbox.enabled():
+            rc, out, err = sandbox.run([sys.executable, cmd_file], str(ws), 60)
+            return (False, "tests timed out") if rc == 124 else (rc == 0, (out + err)[-3000:])
         try:
             r = subprocess.run([sys.executable, cmd_file], cwd=str(ws), capture_output=True, text=True, timeout=60)
         except subprocess.TimeoutExpired:

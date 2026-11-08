@@ -216,6 +216,8 @@ def run_harness(e: dict, arm: dict, tasks_dir: Path, work: Path, base_url: str) 
         env.pop("HARNESS_FORCE_MODEL", None)
     for k, v in {**(e.get("env") or {}), **(arm.get("env") or {})}.items():  # arm overrides experiment-wide env
         env[str(k)] = str(v)
+    if arm.get("batch_size"):   # arm parameter of S11: same as env HARNESS_BATCH_SIZE
+        env["HARNESS_BATCH_SIZE"] = str(arm["batch_size"])
     with open(work / "stderr.txt", "w") as err:
         subprocess.run([str(LAB / ".venv" / "bin" / "python"), str(LAB / "harness" / "run_agent.py"),
                         "--tasks-dir", str(tasks_dir)], cwd=str(LAB), env=env, stdout=subprocess.DEVNULL, stderr=err,

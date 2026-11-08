@@ -96,19 +96,36 @@ async def run_task(task: TaskInfo, model_name: str, pred: Prediction, cfg: Confi
     from .llm import CallContext
     from .pipelines import PIPELINES
 
+    from . import guard, judge
+
     profile = load_profile(task.task_type)
     mode = os.environ.get("HARNESS_MODE") or profile.get("mode", "pipeline")
     pipeline = PIPELINES.get(task.task_type)
+    guard.inspect_task(task, journal)   # HARNESS_GUARD=log|strip (S12); off by default
     if mode == "pipeline" and pipeline is not None:
         t0 = time.time()
         res = None
+        ctx = CallContext(task, model_name, pred, cfg, ledger, journal)
         try:
-            res = await pipeline(CallContext(task, model_name, pred, cfg, ledger, journal))
+            res = await pipeline(ctx)
         except Exception as exc:  # noqa: BLE001 - fall back to the agent
             journal.event("pipeline_error", task=task.task_id, error=type(exc).__name__, detail=str(exc)[:200])
         if res is not None:
             status, answer = res
             journal.event("pipeline_done", task=task.task_id, status=status)
+            if status == "solved" and judge.mode() != "off":   # censor, verification side (S10)
+                v = await judge.verify_answer(ctx, task, answer)
+                if v and judge.action() == "retry" and v["p"] < judge.min_p():
+                    ctx2 = CallContext(task, model_name, pred, cfg, ledger, journal)
+                    try:
+                        res2 = await pipeline(ctx2)
+                    except Exception:  # noqa: BLE001 - the first answer stands
+                        res2 = None
+                    if res2 is not None and res2[0] == "solved":
+                        v2 = await judge.verify_answer(ctx2, task, res2[1])
+                        journal.event("verify_retry", task=task.task_id, p_before=v["p"], p_after=(v2 or {}).get("p"))
+                        if v2 and v2["p"] > v["p"]:
+                            status, answer = res2
             return ExecResult(status, answer, time.time() - t0)
         fb_mode = os.environ.get("HARNESS_FALLBACK", "on").lower()  # on: agent right away | late | off
         fallback_on = fb_mode != "off" and bool(profile.get("fallback", True))

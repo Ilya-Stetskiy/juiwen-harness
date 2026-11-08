@@ -25,10 +25,13 @@ class CallContext:
     journal: Journal
     flagged: set = field(default_factory=set)
     n_calls: int = 0
+    extra: dict = field(default_factory=dict)   # side information for the verifier, e.g. extra["runs"] (code, rc, stdout)
 
 
-def _sampling() -> dict:
+def _sampling(override: float | None = None) -> dict:
     """HARNESS_TEMPERATURE (optional): unset keeps the provider default; 0 makes runs repeatable."""
+    if override is not None:
+        return {"temperature": override}
     raw = os.environ.get("HARNESS_TEMPERATURE", "").strip()
     try:
         return {"temperature": float(raw)} if raw else {}
@@ -53,6 +56,32 @@ def effective_max_tokens(model: str, base: int) -> int:
 
 
 async def ask(ctx: CallContext, system: str, user: str, max_tokens: int) -> str:
+    """One call. With HARNESS_LOOP=log|retry the finished reply is checked for repetition / truncation (S13)."""
+    from . import detectors
+
+    mode = detectors.mode()
+    if mode == "off":
+        return await _ask_once(ctx, system, user, max_tokens)
+    before = ctx.ledger.task_cost(ctx.task.task_id)
+    reply = await _ask_once(ctx, system, user, max_tokens)
+    cost = ctx.ledger.task_cost(ctx.task.task_id) - before
+    score = detectors.loop_score(reply)
+    flagged = detectors.is_loop(score)
+    cut = detectors.truncated(reply, cost, effective_max_tokens(ctx.model, max_tokens))
+    ctx.journal.event("loop_check", task=ctx.task.task_id, model=ctx.model, cost=round(cost, 1),
+                      max_tokens=effective_max_tokens(ctx.model, max_tokens), loop=flagged, truncated=cut, **score)
+    if mode == "retry" and (flagged or cut):
+        ctx.journal.event("loop", task=ctx.task.task_id, model=ctx.model, wasted=round(cost, 1), action="retry")
+        try:
+            temp = float(os.environ.get("HARNESS_LOOP_TEMP", "0.6"))
+        except ValueError:
+            temp = 0.6
+        reply = await _ask_once(ctx, system, user + "\n\nBe brief: answer directly and do not repeat yourself.",
+                                max_tokens, temperature=temp)
+    return reply
+
+
+async def _ask_once(ctx: CallContext, system: str, user: str, max_tokens: int, temperature: float | None = None) -> str:
     from openjiuwen.core.foundation.llm.model import Model
     from openjiuwen.core.foundation.llm.schema.config import ModelClientConfig, ModelRequestConfig
     from openjiuwen.core.session.agent import create_agent_session
@@ -69,7 +98,7 @@ async def ask(ctx: CallContext, system: str, user: str, max_tokens: int) -> str:
             timeout=180, verify_ssl=False,
         ),
         model_config=ModelRequestConfig(model=ctx.model, max_tokens=effective_max_tokens(ctx.model, max_tokens),
-                                        **_sampling()),
+                                        **_sampling(temperature)),
     )
     card = AgentCard(id=cid, name=cid, description="single call")
     agent = create_deep_agent(
