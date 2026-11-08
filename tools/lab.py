@@ -92,6 +92,9 @@ def build_task_set(e: dict, out: Path) -> dict:
             r = sm.next_row(sm.rng.choice(pool))
             if r is None or r["task_id"] in grading:
                 continue
+            rw = e.get("rewards")
+            if rw:  # random but reproducible rewards, as in the competition (points unrelated to difficulty)
+                r["reward"] = random.Random(f"{rw.get('seed', 1)}:{r['task_id']}").randint(int(rw["low"]), int(rw["high"]))
             sr.write_task_dir(r, out / "tasks" / r["task_id"])
             grading[r["task_id"]] = sr.grading_entry(r, _source_of(r, pool), len(grading))
             got += 1
@@ -134,7 +137,7 @@ def run_harness(e: dict, arm: dict, tasks_dir: Path, work: Path, base_url: str) 
     env = dict(os.environ, HARNESS_FORCE_MODEL=e["model"], LLM_BASE_URL=base_url, LLM_API_KEY="x",
                HARNESS_CWD=str(work / "cwd"), BUDGET=str(e["budget"]), HARNESS_LOG_DIR=str(work / "logs"),
                HARNESS_WORKERS=str(e["workers"]), HARNESS_LIMITS="off", HARNESS_FALLBACK=str(e["fallback"]))
-    for k, v in (arm.get("env") or {}).items():
+    for k, v in {**(e.get("env") or {}), **(arm.get("env") or {})}.items():  # arm overrides experiment-wide env
         env[str(k)] = str(v)
     with open(work / "stderr.txt", "w") as err:
         subprocess.run([str(LAB / ".venv" / "bin" / "python"), str(LAB / "harness" / "run_agent.py"),
@@ -267,13 +270,23 @@ def make_report(name: str) -> str:
                   "Per task the correctness is averaged over repeats; the difference is taken per task and the 95% "
                   "interval is a bootstrap over tasks. The interval excluding 0 is the criterion; 'within noise' means "
                   "this experiment cannot tell the arms apart.", "",
-                  "| arm | type | tasks | mean diff | 95% CI | better / worse / same | verdict |", "|---|---|---|---|---|---|---|"]
+                  "Last column: difference in reward-weighted points per run (sum over the tasks of the group), same "
+                  "bootstrap; it is the metric that sees the order in which tasks are solved.", "",
+                  "| arm | type | tasks | mean diff | 95% CI | better / worse / same | verdict | points diff per run [95% CI] |",
+                  "|---|---|---|---|---|---|---|---|"]
 
         def per_task(a, t):
             acc = collections.defaultdict(list)
             for c in good:
                 if c["arm"] == a and in_group(c, t):
                     acc[c["task_id"]].append(c["correct"])
+            return {k: sum(v) / len(v) for k, v in acc.items()}
+
+        def per_task_points(a, t):
+            acc = collections.defaultdict(list)
+            for c in good:
+                if c["arm"] == a and in_group(c, t):
+                    acc[c["task_id"]].append(c["reward"] * c["correct"])
             return {k: sum(v) / len(v) for k, v in acc.items()}
         for a in arms[1:]:
             for t in group_labels(good):
@@ -287,8 +300,13 @@ def make_report(name: str) -> str:
                 better = sum(v > 1e-9 for v in diffs)
                 worse = sum(v < -1e-9 for v in diffs)
                 verdict = ("**better**" if lo > 0 else "**worse**" if hi < 0 else "within noise")
-                lines.append(f"| {a} | {t} | {len(ids)} | {mean:+.3f} | [{lo:+.3f}, {hi:+.3f}] | "
-                             f"{better} / {worse} / {len(ids) - better - worse} | {verdict} |")
+                px, py = per_task_points(a, t), per_task_points(base, t)
+                pd = [px[i] - py[i] for i in ids]
+                plo, phi = bootstrap_ci(pd)
+                n = len(ids)
+                lines.append(f"| {a} | {t} | {n} | {mean:+.3f} | [{lo:+.3f}, {hi:+.3f}] | "
+                             f"{better} / {worse} / {n - better - worse} | {verdict} | "
+                             f"{sum(pd):+.1f} [{plo * n:+.1f}, {phi * n:+.1f}] |")
     return "\n".join(lines) + "\n"
 
 

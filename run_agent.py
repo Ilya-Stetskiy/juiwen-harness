@@ -141,7 +141,9 @@ async def amain(tasks_dir: str) -> None:
         _worker(i, sched, cfg, ledger, journal, t_start, state) for i in range(cfg.workers)
     ])
     if state["deferred"]:
-        queue = sorted(state["deferred"], key=lambda x: -x[0].reward)
+        queue = list(state["deferred"])  # HARNESS_LATE_ORDER=fifo keeps the order in which the pipeline gave up
+        if os.environ.get("HARNESS_LATE_ORDER", "reward").lower() != "fifo":
+            queue.sort(key=lambda x: -x[0].reward)
         journal.event("late_phase", n=len(queue), spent=round(ledger.spent(), 1), budget=cfg.budget)
         await asyncio.gather(*[
             _late_worker(i, queue, cfg, ledger, journal, t_start, state) for i in range(cfg.workers)
