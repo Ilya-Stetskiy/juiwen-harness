@@ -44,6 +44,20 @@ MODEL = os.environ.get("AUTOLAB_MODEL", "qwen3.8-27b")
 BASE = os.environ.get("AUTOLAB_BASE_URL", f"http://127.0.0.1:{sr.PROXY_PORT}/v1")
 FORBIDDEN = ("Dockerfile", "requirements.txt", "requirements-lab.txt", "tools/deploy.sh")
 ALLOWED_PREFIX = ("harness/", "profiles/", "run_agent.py", "tools/lab.py", "tools/selftest_blocks.py")
+# Allowed values of the enumerated switches (anything else is silently treated as "off" by the harness, so it is refused here).
+SWITCH_VALUES = {
+    "HARNESS_VERIFY": ["off", "free", "judge"], "HARNESS_VERIFY_ACTION": ["log", "retry", "recheck"],
+    "HARNESS_RECHECK_MODE": ["strong", "other"], "HARNESS_RECHECK_QUEUE": ["inline", "later"],
+    "HARNESS_DISAGREE": ["higher_p", "strong", "third"], "HARNESS_LOOP": ["off", "log", "retry"],
+    "HARNESS_CENSOR": ["off", "log", "enforce"], "HARNESS_CENSOR_BASIS": ["fixed", "pred"],
+    "HARNESS_BUDGET_HARD": ["off", "on"], "HARNESS_GUARD": ["off", "log", "strip"], "HARNESS_SANDBOX": ["off", "scrub", "limits"],
+    "HARNESS_BATCH_PROMPT": ["plain", "compute"], "HARNESS_SORTER": ["greedy", "fifo", "reward"],
+    "HARNESS_PREDICTOR": ["placeholder", "flat", "measured"], "HARNESS_PUNSOLV": ["off", "contradiction"],
+    "HARNESS_SOLVERS": ["arith", "contradiction", "arith,contradiction"], "HARNESS_SUBMIT_UNSOLVABLE": ["on", "off"],
+    "HARNESS_FALLBACK": ["on", "off", "late"], "HARNESS_GUESS_UNSOLVABLE": ["off", "free", "llm"],
+    "HARNESS_VERIFY_JUDGE_TYPES": None, "HARNESS_BATCH_TYPES": None, "HARNESS_RECHECK_TYPES": None,
+}
+MODELS = ["qwen3.6-35b-a3b-noreason", "qwen3.6-35b-a3b", "qwen3.8-27b-noreason", "qwen3.8-27b"]
 SIM_KEYS = ("HARNESS_SORTER", "HARNESS_PREDICTOR", "HARNESS_PUNSOLV", "HARNESS_SOLVERS")
 
 
@@ -140,6 +154,10 @@ Finished experiments:
 {digest()}
 
 Environment switches you may use in `env:` of an arm (nothing else is allowed): {sw}
+Allowed values of enumerated switches (any other value silently turns the block off, and will be refused): {json.dumps(SWITCH_VALUES)}
+(None = comma-separated list of task types. Numeric switches: HARNESS_VERIFY_ACCEPT, HARNESS_VERIFY_MIN 0..1, HARNESS_RECHECK_MAX, HARNESS_BUDGET_STOP 0..1, HARNESS_CENSOR_TOKENS "math=1500,search=1200".)
+A verifier recheck needs HARNESS_VERIFY=judge (or free) AND HARNESS_VERIFY_ACTION=recheck; HARNESS_RECHECK_MODE=other asks a model of another family (HARNESS_OTHER_MODEL) and uses agreement as the signal.
+`batch_size` of an arm (1,2,4,8) switches batching on; it needs HARNESS_BATCH_PROMPT=compute to keep accuracy.
 Frozen sets you may use (`set:`): {json.dumps(sets_available())}
 Models: qwen3.6-35b-a3b-noreason, qwen3.6-35b-a3b, qwen3.8-27b-noreason, qwen3.8-27b, auto.
 
@@ -176,6 +194,15 @@ def validate(h: dict) -> list[str]:
         for k in (v or {}).get("env") or {}:
             if k not in ks:
                 errs.append(f"arm {a}: unknown switch {k}")
+            elif SWITCH_VALUES.get(k) and str(((v or {}).get("env") or {})[k]) not in SWITCH_VALUES[k]:
+                errs.append(f"arm {a}: {k} must be one of {SWITCH_VALUES[k]}")
+            elif k.endswith(("_MIN", "_ACCEPT", "_GIVEUP", "_THRESHOLD", "_TEMP", "_STOP", "_RECHECK", "_MAX", "_SIZE")):
+                try:
+                    float(((v or {}).get("env") or {})[k])
+                except ValueError:
+                    errs.append(f"arm {a}: {k} must be a number")
+        if (v or {}).get("model") and v["model"] not in MODELS + ["auto"]:
+            errs.append(f"arm {a}: unknown model")
     if int(h.get("repeats", 1)) not in (1, 2):
         errs.append("repeats 1 or 2")
     if int(h.get("budget", 100000)) > 100000:
@@ -365,6 +392,7 @@ def selftest() -> None:
     assert validate(good) == [] or all("unknown switch" in e for e in validate(good)), validate(good)
     bad = dict(good, arms={"base": {"env": {"HARNESS_NOPE": "1"}}, "v": {}})
     assert any("unknown switch" in e for e in validate(bad))
+    assert any("must be one of" in e for e in validate(dict(good, arms={"base": {}, "v": {"env": {"HARNESS_VERIFY": "1"}}})))
     assert any("not an available" in e for e in validate(dict(good, set="mixed100_holdout")))
     assert extract_json('text [{"a": 1}] tail') == [{"a": 1}]
     print("autolab selftest ok")
