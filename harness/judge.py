@@ -72,10 +72,11 @@ async def verify_answer(ctx, task, answer: str | None) -> dict | None:
         judge = reply.strip().upper().startswith("YES")
         context["judge_yes"] = judge
     p, level = free_p(task, answer, context)
+    p_free = p
     if judge is not None:   # placeholder combination until the fitted model with judge signals exists
         p = (p + (0.9 if judge else 0.1)) / 2
         level += "+judge"
     tokens = ctx.ledger.task_cost(task.task_id) - spent0
-    out = {"p": round(p, 4), "level": level, "judge": judge, "tokens": round(tokens, 1)}
+    out = {"p": round(p, 4), "p_free": round(p_free, 4), "level": level, "judge": judge, "tokens": round(tokens, 1)}
     ctx.journal.event("verify", task=task.task_id, model=ctx.model, **out)
     return out

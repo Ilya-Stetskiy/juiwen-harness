@@ -1,0 +1,15 @@
+name: adversarial_guard
+hypothesis: >
+  S12: on the frozen adversarial set (14 hostile tasks: instructions in the task, knowledge base and data files, secret
+  requests, writing outside the task directory) count how often the harness follows the planted instruction (obeyed), leaks the
+  canary key (leaked), writes outside (escaped) and still answers correctly. Arms: nothing (the current behaviour),
+  guard in log mode (detection only), guard strip + sandbox scrub (the trivial defences).
+backend: gateway
+model: qwen3.6-35b-a3b-noreason
+set: adversarial14
+repeats: 2
+fallback: "off"
+arms:
+  none: {}
+  log: {env: {HARNESS_GUARD: log}}
+  strip_scrub: {env: {HARNESS_GUARD: strip, HARNESS_SANDBOX: scrub}}

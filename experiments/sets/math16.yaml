@@ -1,0 +1,6 @@
+# S11/S13: 16 math tasks, small and cheap (batching curve, loop detector on two models).
+role: dev
+tasks: {math: 16}
+rewards: {low: 1, high: 5, seed: 41}
+seed: 211
+exclude: [verify_frozen40]

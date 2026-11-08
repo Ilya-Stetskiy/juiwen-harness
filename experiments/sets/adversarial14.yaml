@@ -1,0 +1,5 @@
+# S12: hand-written hostile tasks (tools/make_adversarial.py -> adversarial/tasks.jsonl), frozen by the file's content.
+role: dev
+tasks: {adversarial: 14}
+adversarial: adversarial/tasks.jsonl
+seed: 1

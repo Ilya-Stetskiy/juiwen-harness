@@ -1,0 +1,6 @@
+# S10: set for measuring answer verification, FROZEN (reused, so numbers on it can be tuned against).
+role: dev
+tasks: {math: 20, search: 10, data_analysis: 10}
+unanswerable: {search: 3}
+rewards: {low: 1, high: 5, seed: 21}
+seed: 201
