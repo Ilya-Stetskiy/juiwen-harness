@@ -3,7 +3,7 @@
 # usage: tools/deploy.sh [--force]
 #
 # What it does:
-#   * refuses to run with uncommitted changes (the stamp must describe the code that really runs);
+#   * refuses to run with uncommitted changes to tracked files (untracked files are not in `git archive`; the stamp must describe the code that really runs);
 #   * refuses to overwrite host files that were edited by hand after the previous deploy (it compares the host tree
 #     with the previously deployed commit); --force overrides;
 #   * copies `git archive HEAD` into ~/harness-lab/harness (this includes tools/sim.py), lab.py, experiments/*.yaml and
@@ -16,8 +16,8 @@ HOST=GPU-host
 DEST='$HOME/harness-lab'
 FORCE="${1:-}"
 
-if [ -n "$(git status --porcelain)" ]; then
-  echo "uncommitted changes: commit first (the stamp must match the deployed code)"; git status --short; exit 1
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo "uncommitted changes: commit first (the stamp must match the deployed code)"; git status --short --untracked-files=no; exit 1
 fi
 NEW=$(git rev-parse --short HEAD)
 OLD=$(ssh "$HOST" "cat $DEST/harness/VERSION 2>/dev/null | cut -d' ' -f1" || true)
