@@ -38,8 +38,8 @@ if [ -n "$OLD" ] && [ "$FORCE" != "--force" ] && git cat-file -e "$OLD^{commit}"
 fi
 
 git archive HEAD | ssh "$HOST" "mkdir -p $DEST/harness && tar -x -C $DEST/harness"
-scp -q tools/lab.py "$HOST:$DEST/lab.py"
 ssh "$HOST" "mkdir -p $DEST/experiments"
-scp -q experiments/*.yaml "$HOST:$DEST/experiments/"
+scp -q tools/lab.py "$HOST:harness-lab/lab.py"            # scp paths are relative to the home directory
+scp -q experiments/*.yaml "$HOST:harness-lab/experiments/"
 ssh "$HOST" "echo '$NEW $(date +%Y-%m-%dT%H:%M:%S)' > $DEST/harness/VERSION"
 echo "deployed $NEW (previous: ${OLD:-none})"
