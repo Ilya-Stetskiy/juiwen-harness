@@ -119,7 +119,7 @@ def load_experiment(path: Path, allow_holdout: bool = False) -> dict:
     e.setdefault("workers", 5)
     e.setdefault("rpm", 55)
     e.setdefault("seed", 1000)
-    e.setdefault("week_guard", 600_000)
+    e.setdefault("week_guard", None)   # None: the experiment threshold of dispatcher.yaml (exp_week_stop_pct), else 600000
     e.setdefault("max_infra_frac", 0.10)
     e.setdefault("budget", 1_000_000_000)
     bad = [t for t in e["tasks"] if t not in sr.SOURCES and not e.get("adversarial")]
@@ -222,8 +222,18 @@ def check_infrastructure(e: dict) -> str:
     lim = sr.limits()
     if lim is not None:
         week = (lim.get("chat", {}).get("week") or {}).get("used", 0)
-        if week >= e["week_guard"]:
-            raise Abort(f"weekly gateway usage {week} >= guard {e['week_guard']}")
+        guard = e["week_guard"]
+        if guard is None:
+            guard = 600_000
+            try:
+                import dispatcher
+                if dispatcher.CONFIG.exists():
+                    wk = (lim.get("chat", {}).get("week") or {}).get("limit") or 0
+                    guard = dispatcher.load_cfg()["exp_week_stop_pct"] / 100.0 * wk if wk else guard
+            except Exception:  # noqa: BLE001 - no dispatcher module: the old fixed guard
+                pass
+        if week >= guard:
+            raise Abort(f"weekly gateway usage {week} >= guard {guard:.0f}")
     st = sr.proxy_state()
     if st is None:
         sr.start_proxy(e["rpm"])
