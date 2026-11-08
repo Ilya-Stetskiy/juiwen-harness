@@ -230,6 +230,19 @@ def variants_seen(log_dir: Path) -> dict[str, collections.Counter]:
     return seen
 
 
+def mark_unfunded(rows: list[dict], journal: list[dict]) -> int:
+    """A task that never started in a run that FINISHED (`run_end` in the journal) was left out by the budget (or the
+    unsolvable skip), it is not an infrastructure failure: it must not be re-run with a fresh budget. Without
+    `run_end` the run itself was cut and `not_run` stays transient."""
+    if not any(r.get("event") == "run_end" for r in journal):
+        return 0
+    n = 0
+    for r in rows:
+        if r["status"] == "not_run":
+            r["status"], n = "unfunded", n + 1
+    return n
+
+
 def execute(e: dict, arm_name: str, arm: dict, grading: dict, base: Path, base_url: str, label: str) -> list[dict]:
     """Run the harness on all tasks of `grading` (copied from the fixed set) and return graded rows."""
     work = WORK / e["name"] / label
@@ -239,6 +252,10 @@ def execute(e: dict, arm_name: str, arm: dict, grading: dict, base: Path, base_u
         shutil.copytree(base / "tasks" / tid, work / "tasks" / tid)
     run_harness(e, arm, work / "tasks", work, base_url)
     rows = sr.grade_chunk(arm.get("model", e["model"]), 0, work / "tasks", work / "logs", grading)
+    jrows = sr.journal_rows(work / "logs")
+    n_unfunded = mark_unfunded(rows, jrows)
+    if n_unfunded:
+        say(f"  {label}: {n_unfunded} tasks were never started (budget), counted as not solved, not retried")
     seen = variants_seen(work / "logs")
     for kind, want in (arm.get("expect") or {}).items():
         got = dict(seen.get(kind, {}))
@@ -250,7 +267,7 @@ def execute(e: dict, arm_name: str, arm: dict, grading: dict, base: Path, base_u
     keep = RESULTS / e["name"] / "journals"   # metadata journals only (events, tokens, statuses), never prompts
     keep.mkdir(parents=True, exist_ok=True)
     with open(keep / f"{label}.jsonl", "w", encoding="utf-8") as out:
-        for r in sr.journal_rows(work / "logs"):
+        for r in jrows:
             out.write(json.dumps(r, ensure_ascii=False) + "\n")
     shutil.rmtree(work, ignore_errors=True)
     return rows
@@ -792,6 +809,10 @@ def selftest() -> None:
     shifted = [0.33 if rng.random() < 0.5 else 0.0 for _ in range(40)]
     lo, hi = bootstrap_ci(shifted)
     assert lo > 0, ("a one-sided shift must be detected", lo, hi)
+    rows = [{"status": "not_run"}, {"status": "solved"}]
+    assert mark_unfunded(rows, [{"event": "run_end"}]) == 1 and rows[0]["status"] == "unfunded", "budget-skipped task is final"
+    rows = [{"status": "not_run"}]
+    assert mark_unfunded(rows, [{"event": "run_start"}]) == 0 and rows[0]["status"] == "not_run", "cut run: still transient"
     e = {"seed": 1000, "tasks": {"math": 6, "search": 4}}
     a = build_task_set(e, WORK / "selftest_a")
     b = build_task_set(e, WORK / "selftest_b")

@@ -207,7 +207,7 @@ def read_run(exp: str, arm: str, rep: int) -> dict:
         model = arm_model if arm_model != "auto" else chosen.get(c["task_id"])
         tasks.append({"task_id": c["task_id"], "type": c["type"], "reward": float(c["reward"]), "unans": bool(c["unanswerable"]),
                       "source": c["source"], "model": model, "infra": c["infra"], "status": c["status"]})
-        if model and not c["infra"] and c["status"] != "not_run":
+        if model and not c["infra"] and c["status"] not in ("not_run", "unfunded"):
             store.add(c["task_id"], model, outcome_from_row(c, f"{exp}/{arm}_{rep}"))
     env = {**(meta.get("env") or {}), **(meta["arms"][arm].get("env") or {})}
     fb = str(env.get("HARNESS_FALLBACK", meta.get("fallback", "off"))).lower()
@@ -215,7 +215,7 @@ def read_run(exp: str, arm: str, rep: int) -> dict:
             "budget": float(meta["budget"]), "workers": int(run_start.get("workers", 5)), "arm_model": arm_model,
             "real_points": sum(c["reward"] * c["correct"] for c in cells if not c["infra"]),
             "real_spent": float(run_end.get("spent", sum(c["hybrid_cost"] for c in cells))),
-            "real_done": sum(c["status"] != "not_run" for c in cells), "journal": jf.exists(), "chosen": chosen, "start_ts": start_ts}
+            "real_done": sum(c["status"] not in ("not_run", "unfunded") for c in cells), "journal": jf.exists(), "chosen": chosen, "start_ts": start_ts}
 
 
 # ------------------------------------------------------------------ the simulation
@@ -428,13 +428,14 @@ def cmd_replay(a) -> None:
                 run = read_run(a.experiment, arm, rep)
             except (OSError, SystemExit):
                 continue
-            res = run_replay(ctx, run, a)
+            res = run_replay(ctx, run, a, budget=a.budget)
             if a.jitter_draws:
-                js = [run_replay(ctx, run, a, seed=100 + k, jitter=0.25) for k in range(a.jitter_draws)]
+                js = [run_replay(ctx, run, a, budget=a.budget, seed=100 + k, jitter=0.25) for k in range(a.jitter_draws)]
                 pts = [j["points"] for j in js]
                 m, sd = statistics.fmean(pts), statistics.pstdev(pts)
                 spt = statistics.fmean(j["spent"] for j in js)
-                print(f"  {arm} #{rep}: with the clock perturbed by +-25% ({a.jitter_draws} draws) sim points {m:.1f} sd {sd:.1f} "
+                extra = f" (budget {a.budget:.0f})" if a.budget else ""
+                print(f"  {arm} #{rep}{extra}: with the clock perturbed by +-25% ({a.jitter_draws} draws) sim points {m:.1f} sd {sd:.1f} "
                       f"[{min(pts):.0f}..{max(pts):.0f}], real {run['real_points']:.0f} ({(run['real_points'] - m) / max(sd, 1e-9):+.1f} sd); "
                       f"spent {spt:.0f} vs real {run['real_spent']:.0f}")
             same = sum(1 for tid, d in res["done"].items() if run["chosen"].get(tid) == d["model"])
@@ -449,7 +450,7 @@ def cmd_replay(a) -> None:
             worst = max(worst, abs(dp))
             print(f"| {arm} | {rep} | {run['mode']} | {run['real_points']:.0f} | {res['points']:.0f} | {dp:+.0f} | {run['real_spent']:.0f} | "
                   f"{res['spent']:.0f} | {ds:+.1f} | {same}/{len(res['done'])} | "
-                  f"{sum(t['status'] == 'not_run' for t in run['tasks'])}/{res['n_unrun']} | {res['n_imputed']} |")
+                  f"{sum(t['status'] in ('not_run', 'unfunded') for t in run['tasks'])}/{res['n_unrun']} | {res['n_imputed']} |")
     print(f"\nlargest points difference: {worst:.0f}")
 
 
@@ -570,6 +571,7 @@ def main() -> None:
     r.add_argument("experiment")
     r.add_argument("--arm")
     r.add_argument("--rep", type=int)
+    r.add_argument("--budget", type=float, help="what-if: simulate the recorded run at another budget")
     c = sub.add_parser("curve")
     c.add_argument("--replay", help="experiment[:arm[:rep]]")
     c.add_argument("--stream", action="store_true")
