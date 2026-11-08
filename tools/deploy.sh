@@ -44,5 +44,7 @@ scp -q tools/lab.py "$HOST:harness-lab/lab.py"            # scp paths are relati
 scp -q experiments/*.yaml "$HOST:harness-lab/experiments/"
 ssh "$HOST" "mkdir -p $DEST/experiments/sets $DEST/experiments/queue/pending $DEST/experiments/queue/running $DEST/experiments/queue/done"
 scp -q experiments/sets/*.yaml "$HOST:harness-lab/experiments/sets/"   # frozen sets (never touches queue/ or results/)
+ssh "$HOST" "mkdir -p $DEST/experiments/adversarial"
+scp -q experiments/adversarial/*.jsonl "$HOST:harness-lab/experiments/adversarial/"   # hand-written adversarial tasks (S12)
 ssh "$HOST" "echo '$NEW $(date +%Y-%m-%dT%H:%M:%S)' > $DEST/harness/VERSION"
 echo "deployed $NEW (previous: ${OLD:-none})"
