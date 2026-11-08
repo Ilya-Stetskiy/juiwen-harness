@@ -18,9 +18,9 @@ from harness.answers import write_answer
 from harness.config import MODELS, Config
 from harness.journal import Journal
 from harness.ledger import TokenLedger
-from harness import batching, guard
+from harness import batching, guard, guess
 from harness.predictor import make_predictor
-from harness.solvers import try_solve
+from harness.solvers import dispatch
 from harness.sorter import make_scheduler
 from harness.tasks import load_tasks
 
@@ -50,6 +50,10 @@ async def _worker(wid: int, sched: Scheduler, cfg: Config, ledger: TokenLedger, 
             if status == "solved" and answer:
                 write_answer(task.dir, guard.scrub_answer(answer, task.task_id, journal))
                 state["solved"] += 1
+            elif status == "unsolvable" and guess.mode() != "off":   # HARNESS_GUESS_UNSOLVABLE
+                g = await guess.guess(task, model, pred, cfg, ledger, journal)
+                if g:
+                    write_answer(task.dir, guard.scrub_answer(g, task.task_id, journal))
         except asyncio.TimeoutError:
             status = "timeout"
         except Exception as exc:  # noqa: BLE001 - the run must go on
@@ -126,7 +130,14 @@ async def amain(tasks_dir: str) -> None:
     rest = []
     n_det = 0
     for t in tasks:
-        ans = try_solve(t)
+        det = dispatch(t)
+        if det.kind == "unsolvable":   # deterministic verdict: no tokens are spent on the task (a guess may follow)
+            journal.event("solver_unsolvable", task=t.task_id, solver=det.solver, reward=t.reward)
+            g = await guess.guess(t, MODELS[0], None, cfg, ledger, journal) if guess.mode() != "off" else None
+            if g:
+                write_answer(t.dir, guard.scrub_answer(g, t.task_id, journal))
+            continue
+        ans = det.answer if det.kind == "answer" else None
         if ans is not None:
             try:
                 write_answer(t.dir, ans)

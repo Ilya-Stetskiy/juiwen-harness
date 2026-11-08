@@ -71,17 +71,24 @@ async def solve_batch(ctx: CallContext, tasks: list) -> dict[str, str | None]:
     return {t.task_id: None for t in tasks}
 
 
-async def maybe_batch(task, model, pred, sched, cfg, ledger, journal, state, wid: int) -> bool:
-    """Called by the worker right after `sched.next`. Returns True when the task was handled here as part of a batch."""
+def plan(task, pred, model: str, sched, ledger) -> list:
+    """The batcher's decision: one task or a group. Input: the task just taken from the sorter, the queue behind it
+    (`sched.take_more`), the state (tokens spent). Output: list of (task, prediction), length 1 = no batching.
+    Trivial variant: HARNESS_BATCH_SIZE for the types in HARNESS_BATCH_TYPES, otherwise 1. Not used yet: request-per-minute
+    state, heaviness from the predictor, remaining budget (the planner is the place for them)."""
     size = batch_size()
     if size <= 1 or task.task_type not in batch_types() or not hasattr(sched, "take_more"):
-        return False
-    more = sched.take_more(task.task_type, model, size - 1, ledger.spent())
-    if not more:
+        return [(task, pred)]
+    return [(task, pred)] + sched.take_more(task.task_type, model, size - 1, ledger.spent())
+
+
+async def maybe_batch(task, model, pred, sched, cfg, ledger, journal, state, wid: int) -> bool:
+    """Called by the worker right after `sched.next`. Returns True when the task was handled here as part of a batch."""
+    group = plan(task, pred, model, sched, ledger)
+    if len(group) <= 1:
         return False
     from .executor import run_task
 
-    group = [(task, pred)] + more
     ids = [t.task_id for t, _ in group]
     before = ledger.task_cost(task.task_id)
     for t, p in group:

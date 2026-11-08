@@ -570,6 +570,63 @@ def loop_table(d: Path, good: list[dict], meta: dict) -> list[str]:
             "|---|---|---|---|---|---|---|---|---|---|"] + out_rows
 
 
+def censor_table(d: Path, good: list[dict], meta: dict) -> list[str]:
+    """Censor (executor limits): tasks the censor stopped (or would have stopped, mode log), how many of them were solved anyway."""
+    rows = []
+    for a in meta["arms"]:
+        reps = sorted({c["repeat"] for c in good if c["arm"] == a})
+        ev = [e for e in journal_events(d, a, reps) if e["event"] == "censor"]
+        stopped = [e for e in journal_events(d, a, reps) if e["event"] == "task_stopped"]
+        cells = {(c["repeat"], c["task_id"]): c for c in good if c["arm"] == a}
+        if not ev and not stopped:
+            continue
+        flagged = [(e, cells.get((e["_rep"], e["task"]))) for e in ev]
+        flagged = [(e, c) for e, c in flagged if c is not None]
+        right = sum(1 for _, c in flagged if c["correct"])
+        saved = sum(max(c["hybrid_cost"] - e["cap"], 0.0) for e, c in flagged)
+        wasted_right = sum(max(c["hybrid_cost"] - e["cap"], 0.0) for e, c in flagged if c["correct"])
+        enforced = any(e.get("enforced") for e in ev)
+        rows.append(f"| {a} | {'enforce' if enforced else 'log'} | {len(flagged)} | {right} | {len(flagged) - right} | "
+                    f"{saved:.0f} | {wasted_right:.0f} | {len(stopped)} |")
+    if not rows:
+        return []
+    return ["", "## Censor: executor limits", "",
+            "`flagged` = tasks that crossed the cap (token or time) at least once. In `log` mode nothing was stopped: "
+            "'saved' is the tokens spent above the cap by those tasks (what stopping would have saved), 'wrongly cut' counts "
+            "flagged tasks that were solved anyway and the tokens they would have lost. In `enforce` mode the stop was carried out.", "",
+            "| arm | mode | flagged tasks | solved anyway (cut for nothing) | not solved | tokens above cap | of them in solved tasks | task_stopped events |",
+            "|---|---|---|---|---|---|---|---|"] + rows
+
+
+def recheck_table(d: Path, good: list[dict], meta: dict) -> list[str]:
+    """Verifier verdicts and rechecks: do the free tokens of the budget cover the rechecks?"""
+    out_rows = []
+    for a in meta["arms"]:
+        reps = sorted({c["repeat"] for c in good if c["arm"] == a})
+        ev = journal_events(d, a, reps)
+        ver = [e for e in ev if e["event"] == "verify"]
+        rc = [e for e in ev if e["event"] == "verify_retry"]
+        if not ver:
+            continue
+        end = [e for e in ev if e["event"] == "run_end"]
+        spent = statistics.fmean(e["spent"] for e in end) if end else float("nan")
+        verd = collections.Counter(e.get("verdict", "?") for e in ver)
+        vtok = sum(e["tokens"] for e in ver) / max(len(reps), 1)
+        cells = [c for c in good if c["arm"] == a]
+        wrong = sum(not c["correct"] and not c["unanswerable"] for c in cells) / max(len(reps), 1)
+        out_rows.append(f"| {a} | {len(ver) / max(len(reps), 1):.0f} | {verd.get('accept', 0)} / {verd.get('recheck', 0)} / "
+                        f"{verd.get('unsolvable', 0)} | {len(rc) / max(len(reps), 1):.1f} | {sum(bool(e.get('taken')) for e in rc) / max(len(reps), 1):.1f} | "
+                        f"{vtok:.0f} | {spent:.0f} | {meta.get('budget', 0) - spent if end else float('nan'):.0f} | {wrong:.1f} |")
+    if not out_rows:
+        return []
+    return ["", "## Verifier verdicts and rechecks", "",
+            "Per run (mean over repeats): verified answers, verdicts accept / recheck / unsolvable, rechecks done, rechecks whose "
+            "answer replaced the first one, tokens of verification, total tokens spent, tokens left of the budget, wrong answers "
+            "left in the final result. The question: do the free tokens cover the rechecks (about 1.6k per error)?", "",
+            "| arm | verified | accept / recheck / unsolvable | rechecks | replaced | verification tokens | spent | budget left | wrong answers (final) |",
+            "|---|---|---|---|---|---|---|---|---|"] + out_rows
+
+
 def adv_table(d: Path, cells: list[dict], meta: dict) -> list[str]:
     sel_all = [c for c in cells if "adv_obeyed" in c and not c["infra"]]
     if not sel_all:
@@ -651,6 +708,8 @@ def make_report(name: str) -> str:
     lines += batch_table(d, good, meta)
     lines += verify_table(name)
     lines += loop_table(d, good, meta)
+    lines += recheck_table(d, good, meta)
+    lines += censor_table(d, good, meta)
     lines += adv_table(d, cells, meta)
     lines += skip_table(good, arms, runs)
     lines += curve_table(d, good, arms)

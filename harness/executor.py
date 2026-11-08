@@ -96,7 +96,7 @@ async def run_task(task: TaskInfo, model_name: str, pred: Prediction, cfg: Confi
     from .llm import CallContext
     from .pipelines import PIPELINES
 
-    from . import guard, judge
+    from . import budget, guard, judge, limits
 
     profile = load_profile(task.task_type)
     mode = os.environ.get("HARNESS_MODE") or profile.get("mode", "pipeline")
@@ -108,24 +108,16 @@ async def run_task(task: TaskInfo, model_name: str, pred: Prediction, cfg: Confi
         ctx = CallContext(task, model_name, pred, cfg, ledger, journal)
         try:
             res = await pipeline(ctx)
+        except (limits.CensorStop, budget.BudgetStop) as exc:   # the censor / the hard budget said stop: no fallback
+            journal.event("task_stopped", task=task.task_id, by=type(exc).__name__, detail=str(exc)[:120])
+            return ExecResult("failed", None, time.time() - t0)
         except Exception as exc:  # noqa: BLE001 - fall back to the agent
             journal.event("pipeline_error", task=task.task_id, error=type(exc).__name__, detail=str(exc)[:200])
         if res is not None:
             status, answer = res
             journal.event("pipeline_done", task=task.task_id, status=status)
-            if status == "solved" and judge.mode() != "off":   # censor, verification side (S10)
-                v = await judge.verify_answer(ctx, task, answer)
-                if v and judge.action() == "retry" and v["p"] < judge.min_p():
-                    ctx2 = CallContext(task, model_name, pred, cfg, ledger, journal)
-                    try:
-                        res2 = await pipeline(ctx2)
-                    except Exception:  # noqa: BLE001 - the first answer stands
-                        res2 = None
-                    if res2 is not None and res2[0] == "solved":
-                        v2 = await judge.verify_answer(ctx2, task, res2[1])
-                        journal.event("verify_retry", task=task.task_id, p_before=v["p"], p_after=(v2 or {}).get("p"))
-                        if v2 and v2["p"] > v["p"]:
-                            status, answer = res2
+            if status == "solved" and judge.mode() != "off":   # verifier: accept / recheck / unsolvable (S10)
+                status, answer = await _verify_loop(ctx, pipeline, task, model_name, pred, cfg, ledger, journal, status, answer)
             return ExecResult(status, answer, time.time() - t0)
         fb_mode = os.environ.get("HARNESS_FALLBACK", "on").lower()  # on: agent right away | late | off
         fallback_on = fb_mode != "off" and bool(profile.get("fallback", True))
@@ -135,6 +127,60 @@ async def run_task(task: TaskInfo, model_name: str, pred: Prediction, cfg: Confi
         if fb_mode == "late":  # the agent is a second tier: the harness runs it after the whole queue is done
             return ExecResult("deferred", None, time.time() - t0)
     return await run_agent_task(task, model_name, pred, cfg, ledger, journal)
+
+
+def recheck_model(default: str) -> str:
+    """HARNESS_RECHECK_MODEL: the stronger executor that repeats a doubtful task (default: the reasoning qwen3.6)."""
+    import os
+    return os.environ.get("HARNESS_RECHECK_MODEL", "qwen3.6-35b-a3b").strip() or default
+
+
+async def _verify_loop(ctx, pipeline, task, model_name, pred, cfg, ledger, journal, status, answer):
+    """Verifier verdict and what follows (HARNESS_VERIFY_ACTION):
+       log       only the `verify` event;
+       retry     old rule: p below HARNESS_VERIFY_MIN -> same pipeline once more, keep the higher p;
+       recheck   verdict "recheck" -> the pipeline again with the stronger model (HARNESS_RECHECK_MODEL), at most
+                 HARNESS_RECHECK_MAX times (default 1); two answers that differ are settled by HARNESS_DISAGREE:
+                 higher_p (default: the answer with the higher verifier p) | strong (trust the stronger executor).
+       verdict "unsolvable" (p below HARNESS_VERIFY_GIVEUP, default 0 = never): no more tokens; the answer is still
+       submitted unless HARNESS_SUBMIT_UNSOLVABLE=off.
+    The recheck runs right away in this worker; sending the task back to the sorter is not done (skeleton)."""
+    import os
+
+    from . import judge
+    from .llm import CallContext
+
+    v = await judge.verify_answer(ctx, task, answer)
+    if not v:
+        return status, answer
+    act = judge.action()
+    best_p = v["p"]
+    attempts = 0
+    limit = 1 if act == "retry" else int(os.environ.get("HARNESS_RECHECK_MAX", "1") or 1)
+    while act in ("retry", "recheck") and attempts < limit and (
+            (act == "retry" and best_p < judge.min_p()) or (act == "recheck" and judge.verdict(best_p) == "recheck")):
+        attempts += 1
+        m2 = model_name if act == "retry" else recheck_model(model_name)
+        ctx2 = CallContext(task, m2, pred, cfg, ledger, journal)
+        ctx2.extra["recheck"] = True
+        try:
+            res2 = await pipeline(ctx2)
+        except Exception:  # noqa: BLE001 - the first answer stands (also on CensorStop / BudgetStop)
+            break
+        if res2 is None or res2[0] != "solved":
+            break
+        v2 = await judge.verify_answer(ctx2, task, res2[1])
+        same = (res2[1] or "").strip().lower() == (answer or "").strip().lower()
+        take = bool(v2) and (v2["p"] > best_p if os.environ.get("HARNESS_DISAGREE", "higher_p") != "strong" else True)
+        journal.event("verify_retry", task=task.task_id, action=act, model=m2, p_before=best_p, p_after=(v2 or {}).get("p"),
+                      same_answer=same, taken=take and not same)
+        if take:
+            status, answer, best_p = res2[0], res2[1], v2["p"]
+    if judge.verdict(best_p) == "unsolvable":
+        journal.event("verdict_unsolvable", task=task.task_id, p=best_p)
+        if os.environ.get("HARNESS_SUBMIT_UNSOLVABLE", "on").strip().lower() == "off":
+            return "unsolvable", None
+    return status, answer
 
 
 async def run_agent_task(task: TaskInfo, model_name: str, pred: Prediction, cfg: Config,
@@ -199,3 +245,12 @@ async def run_agent_task(task: TaskInfo, model_name: str, pred: Prediction, cfg:
     finally:
         if tmp_ws:
             shutil.rmtree(tmp_ws, ignore_errors=True)
+
+
+# Registry of LLM executors (the deterministic solvers are a separate registry: harness/solvers/).
+# Interface: coroutine (task, model_name, pred, cfg, ledger, journal) -> ExecResult. Limits come from the censor
+# (harness/limits.py) and the hard budget (harness/budget.py) inside every call; a refusal is ExecResult("failed"/"unsolvable").
+EXECUTORS = {
+    "simple": run_task,         # scripted pipeline per task type, tool agent as fallback (the "simple LLM executor")
+    "agent": run_agent_task,    # tool agent (late tier / strong executor for rechecks)
+}

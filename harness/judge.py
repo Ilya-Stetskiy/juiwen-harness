@@ -3,7 +3,7 @@
     HARNESS_VERIFY=off|free|judge      off (default): nothing. free: no tokens, signals of the answer and of the program
                                        that produced it. judge: free + one short LLM call ("is this answer right?"),
                                        its tokens go through the ledger and the journal like any other call.
-    HARNESS_VERIFY_ACTION=log|retry    log (default): only the `verify` event; retry: when p < HARNESS_VERIFY_MIN
+    HARNESS_VERIFY_ACTION=log|retry|recheck    recheck: see executor._verify_loop (stronger model, three verdicts). log (default): only the `verify` event; retry: when p < HARNESS_VERIFY_MIN
                                        (default 0.5) the executor runs the pipeline once more and keeps the answer with
                                        the higher p (the repeat is paid from the budget).
 
@@ -27,7 +27,8 @@ def mode() -> str:
 
 
 def action() -> str:
-    return "retry" if os.environ.get("HARNESS_VERIFY_ACTION", "log").strip().lower() == "retry" else "log"
+    a = os.environ.get("HARNESS_VERIFY_ACTION", "log").strip().lower()
+    return a if a in ("retry", "recheck") else "log"
 
 
 def min_p() -> float:
@@ -56,6 +57,20 @@ def free_p(task, answer, context: dict) -> tuple[float, str]:
         return float(v.p), v.level
     except Exception:  # noqa: BLE001 - module or model missing: the placeholder keeps the block alive
         return _placeholder(task, answer, context)
+
+
+def verdict(p: float) -> str:
+    """Three verdicts: accept | recheck | unsolvable. HARNESS_VERIFY_ACCEPT (default = HARNESS_VERIFY_MIN, 0.5) is the
+    lowest p that is accepted; HARNESS_VERIFY_GIVEUP (default 0 = never) is the p below which no more tokens are spent."""
+    try:
+        giveup = float(os.environ.get("HARNESS_VERIFY_GIVEUP", "0") or 0)
+    except ValueError:
+        giveup = 0.0
+    try:
+        accept = float(os.environ.get("HARNESS_VERIFY_ACCEPT", "") or min_p())
+    except ValueError:
+        accept = min_p()
+    return "accept" if p >= accept else ("unsolvable" if p < giveup else "recheck")
 
 
 def _verifier():
@@ -96,6 +111,7 @@ async def verify_answer(ctx, task, answer: str | None) -> dict | None:
         p = (p_free + (0.9 if judge else 0.1)) / 2   # placeholder combination
         level += "+judge"
     tokens = ctx.ledger.task_cost(task.task_id) - spent0
-    out = {"p": round(p, 4), "p_free": round(p_free, 4), "level": level, "judge": judge, "tokens": round(tokens, 1)}
+    out = {"p": round(p, 4), "p_free": round(p_free, 4), "level": level, "judge": judge, "tokens": round(tokens, 1),
+           "verdict": verdict(p)}
     ctx.journal.event("verify", task=task.task_id, model=ctx.model, **out)
     return out

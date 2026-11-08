@@ -82,6 +82,20 @@ async def ask(ctx: CallContext, system: str, user: str, max_tokens: int) -> str:
 
 
 async def _ask_once(ctx: CallContext, system: str, user: str, max_tokens: int, temperature: float | None = None) -> str:
+    """Gate (censor limits, hard budget reservation) around one raw call. Both gates are off by default."""
+    from . import budget, limits
+
+    limits.check(ctx)                                   # HARNESS_CENSOR=log|enforce
+    est = budget.reserve(ctx, len(system) + len(user), effective_max_tokens(ctx.model, max_tokens),
+                         recheck=bool(ctx.extra.get("recheck")))   # HARNESS_BUDGET_HARD=on
+    before = ctx.ledger.task_cost(ctx.task.task_id)
+    try:
+        return await _raw_call(ctx, system, user, max_tokens, temperature)
+    finally:
+        budget.release(est, ctx.ledger.task_cost(ctx.task.task_id) - before)
+
+
+async def _raw_call(ctx: CallContext, system: str, user: str, max_tokens: int, temperature: float | None = None) -> str:
     from openjiuwen.core.foundation.llm.model import Model
     from openjiuwen.core.foundation.llm.schema.config import ModelClientConfig, ModelRequestConfig
     from openjiuwen.core.session.agent import create_agent_session

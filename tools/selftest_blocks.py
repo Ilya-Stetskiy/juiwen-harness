@@ -181,6 +181,53 @@ def test_batching_and_judge():
         assert asyncio.run(judge.verify_answer(ctx, tasks[0], "5"))["p"] <= v["p"]
 
 
+def test_censor_budget_verdict_guess():
+    from harness import budget, guess, judge, limits, llm, solvers
+    from harness.predictor import Prediction
+    assert limits.mode() == "off" and not budget.enabled() and guess.mode() == "off"
+    t = task()
+    assert limits.decide(t, "m-noreason", 100, 1).action == "continue"
+    assert limits.decide(t, "m-noreason", 99999, 1).action == "stop"
+    assert limits.decide(t, "m-noreason", 100, 9999).action == "stop"
+    assert limits.decide(t, "qwen3.6-35b-a3b", 2000, 1).action == "continue", "reasoning model: cap x3"
+    j = FakeJournal()
+    ctx = llm.CallContext(t, "m-noreason", Prediction(1, 2, 1), None, FakeLedger(), j)
+    limits.check(ctx)
+    assert not j.events, "off: nothing happens"
+    with Env(HARNESS_CENSOR="enforce"):
+        ctx.ledger.c[t.task_id] = 99999.0
+        try:
+            limits.check(ctx)
+            raise AssertionError("enforce must stop")
+        except limits.CensorStop:
+            pass
+        assert j.events[0][0] == "censor"
+    with Env(HARNESS_BUDGET_HARD="on"):
+        class Cfg:
+            budget = 1000
+        ctx.cfg = Cfg()
+        ctx.ledger = FakeLedger()
+        e = budget.reserve(ctx, 400, 100)
+        assert e > 0
+        try:
+            budget.reserve(ctx, 400, 900)
+            raise AssertionError("must not fit")
+        except budget.BudgetStop:
+            pass
+        budget.release(e, 0)
+    assert judge.verdict(0.9) == "accept" and judge.verdict(0.2) == "recheck"
+    with Env(HARNESS_VERIFY_GIVEUP="0.1"):
+        assert judge.verdict(0.05) == "unsolvable"
+    r = solvers.dispatch(t)
+    assert r.kind == "unsure"
+    with Env(HARNESS_SOLVERS="arith"):
+        r = solvers.dispatch(t)
+        assert r.kind == "answer" and r.answer == "11" and r.trust == "verify"
+    with Env(HARNESS_GUESS_UNSOLVABLE="free"):
+        assert asyncio.run(guess.guess(task(typ="coding"), "m", None, None, None, FakeJournal())) == "DONE"
+        assert asyncio.run(guess.guess(task(), "m", None, None, None, FakeJournal())) is None
+
+
 def main():
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

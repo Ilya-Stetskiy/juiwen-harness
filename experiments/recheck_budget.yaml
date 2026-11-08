@@ -1,0 +1,18 @@
+name: recheck_budget
+hypothesis: >
+  Do the free tokens of the budget cover rechecks? On baseline0 the run spends about 61k of 100k and leaves about 24 wrong
+  answers per 100 tasks, i.e. about 39k tokens free, about 1.6k per error. One run on the same frozen set with the verifier
+  (judge level, answer-verifier model) and action `recheck` (a doubtful answer is solved again by the stronger reasoning
+  model, the answer with the higher verifier p stays), accept threshold 0.8; the censor only logs (HARNESS_CENSOR=log) so
+  the report also shows what token caps would have saved and cut. Reference: baseline0 (same set, same budget, no verifier).
+  HARNESS_SUBMIT_UNSOLVABLE is off explicitly: the old behaviour for a reproducible comparison.
+backend: gateway
+model: auto
+set: baseline0
+repeats: 1
+budget: 100000
+fallback: "on"
+arms:
+  recheck:
+    env: {HARNESS_VERIFY: judge, HARNESS_VERIFY_ACTION: recheck, HARNESS_VERIFY_ACCEPT: "0.8", HARNESS_RECHECK_MAX: "1",
+          HARNESS_CENSOR: log, HARNESS_SUBMIT_UNSOLVABLE: "off"}
