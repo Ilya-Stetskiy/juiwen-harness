@@ -1,0 +1,12 @@
+# Development set, coding only: 40 tasks, 10 unanswerable (contradictory tests), random rewards 1-5.
+role: dev
+tasks: {coding: 40}
+sources: {coding: [humanevalfix, codegen_fix]}
+unanswerable: {coding: 10}
+rewards: {low: 1, high: 5, seed: 13}
+seed: 103
+frozen:
+  set_hash: "fc0b57198157"
+  n_tasks: 40
+  n_unanswerable: 10
+  by_type: {"coding": 40}

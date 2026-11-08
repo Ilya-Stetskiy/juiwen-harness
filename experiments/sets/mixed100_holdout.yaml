@@ -1,0 +1,16 @@
+# HOLDOUT / control set: DO NOT USE WHILE TUNING. Same shape as the dev mixed sets, other seed (978).
+# Run only for the final check of a finished configuration: `lab.py run ... --allow-holdout`.
+# A set that influenced any decision is no longer a control.
+role: holdout
+tasks: {math: 25, search: 25, data_analysis: 25, coding: 25}
+sources: {coding: [humanevalfix, codegen_fix]}
+unanswerable: {coding: 8, search: 10}
+rewards: {low: 1, high: 5, seed: 7}
+seed: 978
+# the holdout shares no task with these development sets (the small coding pools collide otherwise)
+exclude: [baseline0, mixed100_dev, dev_math, dev_search, dev_data_analysis, dev_coding]
+frozen:
+  set_hash: "bc96f2dee476"
+  n_tasks: 100
+  n_unanswerable: 18
+  by_type: {"coding": 25, "data_analysis": 25, "math": 25, "search": 25}

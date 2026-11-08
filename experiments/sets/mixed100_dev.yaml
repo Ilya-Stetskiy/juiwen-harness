@@ -1,0 +1,13 @@
+# Second, independent mixed development set (same shape as baseline0, other seed): to confirm a change tuned
+# on baseline0, or to see how much the points depend on which tasks were drawn.
+role: dev
+tasks: {math: 25, search: 25, data_analysis: 25, coding: 25}
+sources: {coding: [humanevalfix, codegen_fix]}
+unanswerable: {coding: 8, search: 10}
+rewards: {low: 1, high: 5, seed: 6}
+seed: 41
+frozen:
+  set_hash: "0d2b7e5762a9"
+  n_tasks: 100
+  n_unanswerable: 18
+  by_type: {"coding": 25, "data_analysis": 25, "math": 25, "search": 25}

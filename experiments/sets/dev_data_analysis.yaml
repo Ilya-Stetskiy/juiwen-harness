@@ -1,0 +1,10 @@
+# Development set, data_analysis only: 40 tasks, random rewards 1-5 (no unanswerable tasks in these sources).
+role: dev
+tasks: {data_analysis: 40}
+rewards: {low: 1, high: 5, seed: 14}
+seed: 104
+frozen:
+  set_hash: "cf957699b012"
+  n_tasks: 40
+  n_unanswerable: 0
+  by_type: {"data_analysis": 40}

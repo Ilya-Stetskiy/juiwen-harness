@@ -7,12 +7,8 @@ hypothesis: >
   This run is the reference every later hypothesis is compared with; it also shows how often the budget binds.
 backend: gateway
 model: auto
-tasks: {math: 25, search: 25, data_analysis: 25, coding: 25}
-sources: {coding: [humanevalfix, codegen_fix]}
-unanswerable: {coding: 8, search: 10}
-rewards: {low: 1, high: 5, seed: 5}
+set: baseline0   # experiments/sets/baseline0.yaml, frozen, hash ebf1bc16da65
 repeats: 2
-seed: 31
 budget: 100000
 arms:
   as_is:

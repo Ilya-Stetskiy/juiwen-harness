@@ -40,8 +40,13 @@ sys.path.insert(0, str(HERE))
 import stream_run as sr  # noqa: E402  (sampler, grader, transient-error test, proxy helpers)
 
 LAB = sr.LAB
-RESULTS = LAB / "experiments" / "results"
-WORK = Path("/tmp/hl_lab")
+# LAB_EXPERIMENTS / LAB_WORK let a test copy of the lab use its own results, sets, queue and scratch space
+EXP_DIR = Path(os.environ.get("LAB_EXPERIMENTS") or LAB / "experiments")
+RESULTS = EXP_DIR / "results"
+SETS_DIR = EXP_DIR / "sets"
+QUEUE = EXP_DIR / "queue"
+WORK = Path(os.environ.get("LAB_WORK") or "/tmp/hl_lab")
+SET_KEYS = ("tasks", "sources", "unanswerable", "rewards", "seed", "exclude")
 sr.TAG = "_lab"          # state and log files of the shared sampler must not collide with the stream
 
 
@@ -62,9 +67,38 @@ def say(msg: str) -> None:
 
 
 # ------------------------------------------------------------------ experiment definition
-def load_experiment(path: Path) -> dict:
+def load_set(name: str) -> dict:
+    """A frozen named task set: experiments/sets/<name>.yaml (seed, tasks, sources, unanswerable, rewards, role)."""
+    import yaml
+    f = SETS_DIR / f"{name}.yaml"
+    if not f.exists():
+        raise SystemExit(f"unknown task set '{name}' (looked for {f})")
+    s = yaml.safe_load(f.read_text(encoding="utf-8"))
+    for k in ("tasks", "seed"):
+        if k not in s:
+            raise SystemExit(f"{f}: missing key '{k}'")
+    s["name"] = name
+    s.setdefault("role", "dev")
+    if s["role"] not in ("dev", "holdout"):
+        raise SystemExit(f"{f}: role must be dev or holdout")
+    return s
+
+
+def load_experiment(path: Path, allow_holdout: bool = False) -> dict:
     import yaml
     e = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if e.get("set"):   # `set: name` replaces tasks/sources/unanswerable/rewards/seed with the frozen set
+        clash = [k for k in SET_KEYS if k in e]
+        if clash:
+            raise SystemExit(f"{path}: 'set' is given together with {clash}; a frozen set defines these keys")
+        s = load_set(e["set"])
+        if s["role"] == "holdout" and not allow_holdout:
+            raise SystemExit(f"{path}: set '{s['name']}' is a HOLDOUT set (not to be used while tuning); "
+                             "run with --allow-holdout only for the final check")
+        for k in SET_KEYS:
+            if k in s:
+                e[k] = s[k]
+        e["set_role"], e["set_frozen"] = s["role"], s.get("frozen")
     for k in ("name", "tasks", "arms"):
         if k not in e:
             raise SystemExit(f"{path}: missing key '{k}'")
@@ -93,6 +127,9 @@ def build_task_set(e: dict, out: Path) -> dict:
     (out / "tasks").mkdir(parents=True)
     sm = sr.Sampler(int(e["seed"]))
     grading: dict[str, dict] = {}
+    skip_ids: set[str] = set()      # `exclude: [set names]`: a holdout set shares no task with the sets it excludes
+    for other in e.get("exclude") or []:
+        skip_ids |= set(build_named_set(other)[1])
     for t, n in e["tasks"].items():
         got, n_un, guard = 0, 0, 0
         pool = e.get("sources", {}).get(t) or sr.SOURCES[t]
@@ -100,7 +137,7 @@ def build_task_set(e: dict, out: Path) -> dict:
         while got < n and guard < n * 300:
             guard += 1
             r = sm.next_row(sm.rng.choice(pool))
-            if r is None or r["task_id"] in grading:
+            if r is None or r["task_id"] in grading or r["task_id"] in skip_ids:
                 continue
             is_un = r["check"] == "unanswerable"
             if quota is not None and ((is_un and n_un >= quota) or (not is_un and got - n_un >= n - quota)):
@@ -115,6 +152,16 @@ def build_task_set(e: dict, out: Path) -> dict:
         if got < n:
             raise Abort(f"could only draw {got} of {n} {t} tasks")
     return grading
+
+
+def set_hash(grading: dict) -> str:
+    return hashlib.sha1("\n".join(sorted(grading)).encode()).hexdigest()[:12]
+
+
+def set_summary(grading: dict) -> dict:
+    by_type = collections.Counter(g["task_type"] for g in grading.values())
+    return {"set_hash": set_hash(grading), "n_tasks": len(grading),
+            "n_unanswerable": sum(bool(g["unanswerable"]) for g in grading.values()), "by_type": dict(sorted(by_type.items()))}
 
 
 def _source_of(row: dict, pool: list[str]) -> str:
@@ -325,7 +372,8 @@ def make_report(name: str) -> str:
     lines = [f"# Experiment `{name}`", "", f"Hypothesis: {meta.get('hypothesis') or '-'}", "",
              f"Model `{meta['model']}`, backend `{meta['backend']}`, fallback `{meta['fallback']}`, "
              f"{meta['n_tasks']} tasks {meta['tasks']}, repeats {meta['repeats']}, seed {meta['seed']}.",
-             f"Code version: {meta.get('code_version', 'not recorded')}. Task set: {meta.get('set_hash', 'not recorded')}, "
+             f"Code version: {meta.get('code_version', 'not recorded')}. Task set: {meta.get('set_name') or 'ad hoc'} "
+             f"[{meta.get('set_role', 'adhoc')}] {meta.get('set_hash', 'not recorded')}, "
              f"unanswerable tasks in the set: {meta.get('n_unanswerable', 'not recorded')}.", ""]
     good = [c for c in cells if not c["infra"]]
     infra = len(cells) - len(good)
@@ -400,18 +448,22 @@ def make_report(name: str) -> str:
 
 
 # ------------------------------------------------------------------ commands
-def cmd_run(path: Path, dry: bool) -> None:
-    e = load_experiment(path)
+def cmd_run(path: Path, dry: bool, allow_holdout: bool = False) -> None:
+    e = load_experiment(path, allow_holdout)
     name = e["name"]
     d = RESULTS / name
     d.mkdir(parents=True, exist_ok=True)
     base = WORK / name / "set"
     grading = build_task_set(e, base)
+    frozen = e.get("set_frozen")
+    if frozen and frozen.get("set_hash") != set_hash(grading):
+        raise SystemExit(f"set '{e['set']}' no longer builds to its frozen hash {frozen.get('set_hash')} "
+                         f"(got {set_hash(grading)}): the dataset or the sampler changed; do not use this set")
     manifest = dict(name=name, hypothesis=e["hypothesis"], model=e["model"], backend=e["backend"],
                     fallback=e["fallback"], tasks=e["tasks"], n_tasks=len(grading), repeats=e["repeats"], seed=e["seed"],
                     arms=e["arms"], task_ids=list(grading), started=time.strftime("%Y-%m-%d %H:%M:%S"),
                     code_version=code_version(), budget=e["budget"], env=e.get("env"),
-                    set_hash=hashlib.sha1("\n".join(sorted(grading)).encode()).hexdigest()[:12],
+                    set_name=e.get("set"), set_role=e.get("set_role", "adhoc"), set_hash=set_hash(grading),
                     n_unanswerable=sum(bool(g["unanswerable"]) for g in grading.values()))
     (d / "manifest.json").write_text(json.dumps(manifest, indent=1, ensure_ascii=False), encoding="utf-8")
     cells_path, runs_path = d / "cells.jsonl", d / "runs.jsonl"
@@ -450,6 +502,57 @@ def cmd_run(path: Path, dry: bool) -> None:
     print(rep_text)
 
 
+# ------------------------------------------------------------------ frozen sets
+def build_named_set(name: str) -> tuple[dict, dict]:
+    s = load_set(name)
+    e = {k: s[k] for k in SET_KEYS if k in s}
+    grading = build_task_set(e, WORK / "sets_build" / name)
+    shutil.rmtree(WORK / "sets_build" / name, ignore_errors=True)
+    return s, grading
+
+
+def cmd_sets(action: str, names: list[str]) -> None:
+    """list / freeze / verify the named sets. `freeze` appends the `frozen:` block once; a frozen set never changes."""
+    allnames = sorted(f.stem for f in SETS_DIR.glob("*.yaml"))
+    names = names or allnames
+    if action == "list":
+        for n in names:
+            s = load_set(n)
+            fz = s.get("frozen") or {}
+            print(f"{n:22} {s['role']:8} tasks {s['tasks']}  seed {s['seed']}  frozen {fz.get('set_hash', '-')}")
+        return
+    ids: dict[str, set] = {}
+    bad = 0
+    for n in names:
+        s, grading = build_named_set(n)
+        info = set_summary(grading)
+        ids[n] = set(grading)
+        fz = s.get("frozen")
+        if action == "freeze" and not fz:
+            f = SETS_DIR / f"{n}.yaml"
+            text = f.read_text(encoding="utf-8")
+            text += ("" if text.endswith("\n") else "\n") + "frozen:\n" + "".join(
+                f"  {k}: {json.dumps(v)}\n" for k, v in info.items())
+            f.write_text(text, encoding="utf-8")
+            print(f"{n}: frozen {info['set_hash']} ({info['n_tasks']} tasks, {info['n_unanswerable']} unanswerable)")
+        elif not fz:
+            print(f"{n}: NOT FROZEN (builds to {info['set_hash']})")
+            bad += 1
+        elif fz["set_hash"] == info["set_hash"]:
+            print(f"{n}: ok {info['set_hash']} ({info['n_tasks']} tasks, {info['n_unanswerable']} unanswerable)")
+        else:
+            print(f"{n}: MISMATCH frozen {fz['set_hash']} but builds to {info['set_hash']}")
+            bad += 1
+    holds = [n for n in ids if load_set(n)["role"] == "holdout"]
+    for h in holds:   # the control set must not share a task with any development set
+        for n in ids:
+            if n != h and n not in holds and ids[n] & ids[h]:
+                print(f"OVERLAP: holdout {h} shares {len(ids[n] & ids[h])} tasks with {n}")
+                bad += 1
+    if bad:
+        sys.exit(1)
+
+
 def selftest() -> None:
     rng = random.Random(1)
     same = [rng.choice([-1, 0, 0, 1]) * 0.33 for _ in range(40)]
@@ -473,12 +576,18 @@ def main() -> None:
     r = sub.add_parser("run")
     r.add_argument("experiment")
     r.add_argument("--dry", action="store_true")
+    r.add_argument("--allow-holdout", action="store_true", help="permit a holdout set (final check only)")
+    st = sub.add_parser("sets")
+    st.add_argument("action", choices=["list", "freeze", "verify"])
+    st.add_argument("names", nargs="*")
     p = sub.add_parser("report")
     p.add_argument("name")
     sub.add_parser("selftest")
     a = ap.parse_args()
     if a.cmd == "run":
-        cmd_run(Path(a.experiment), a.dry)
+        cmd_run(Path(a.experiment), a.dry, a.allow_holdout)
+    elif a.cmd == "sets":
+        cmd_sets(a.action, a.names)
     elif a.cmd == "report":
         print(make_report(a.name))
     else:
