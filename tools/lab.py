@@ -167,6 +167,11 @@ def execute(e: dict, arm_name: str, arm: dict, grading: dict, base: Path, base_u
                         "the environment override did not take effect")
         if not got and any(r["type"] == kind for r in rows):
             raise Abort(f"arm '{arm_name}': no `variant` events for {kind}; cannot confirm variant '{want}'")
+    keep = RESULTS / e["name"] / "journals"   # metadata journals only (events, tokens, statuses), never prompts
+    keep.mkdir(parents=True, exist_ok=True)
+    with open(keep / f"{label}.jsonl", "w", encoding="utf-8") as out:
+        for r in sr.journal_rows(work / "logs"):
+            out.write(json.dumps(r, ensure_ascii=False) + "\n")
     shutil.rmtree(work, ignore_errors=True)
     return rows
 
@@ -236,22 +241,25 @@ def make_report(name: str) -> str:
     infra = len(cells) - len(good)
     lines.append(f"Cells: {len(cells)}; infrastructure-broken (excluded from scoring): {infra}.")
     lines += ["", "## Accuracy and cost per arm", "",
-              "| arm | type | cells | accuracy | sd between repeats | tokens/task | tokens per correct |",
-              "|---|---|---|---|---|---|---|"]
+              "| arm | type | cells | accuracy | points per run | sd between repeats | tokens/task | tokens per correct |",
+              "|---|---|---|---|---|---|---|---|"]
     for a in arms:
         for t in group_labels(good):
             sel = [c for c in good if c["arm"] == a and in_group(c, t)]
             if not sel:
                 continue
             per_rep = collections.defaultdict(list)
+            pts_rep: dict[int, float] = collections.defaultdict(float)
             for c in sel:
                 per_rep[c["repeat"]].append(c["correct"])
+                pts_rep[c["repeat"]] += c["reward"] * c["correct"]
+            points = sum(pts_rep.values()) / len(pts_rep)
             accs = [sum(v) / len(v) for v in per_rep.values()]
             acc = sum(c["correct"] for c in sel) / len(sel)
             sd = statistics.pstdev(accs) if len(accs) > 1 else float("nan")
             cost = sum(c["hybrid_cost"] for c in sel) / len(sel)
             ok = sum(c["correct"] for c in sel)
-            lines.append(f"| {a} | {t} | {len(sel)} | {acc:.3f} | {sd:.3f} | {cost:.1f} | "
+            lines.append(f"| {a} | {t} | {len(sel)} | {acc:.3f} | {points:.1f} | {sd:.3f} | {cost:.1f} | "
                          f"{(sum(c['hybrid_cost'] for c in sel) / ok) if ok else float('nan'):.1f} |")
     if len(arms) > 1:
         base = arms[0]

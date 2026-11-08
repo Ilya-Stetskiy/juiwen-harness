@@ -24,9 +24,19 @@ FOOTER = (
 )
 
 
+# Tokens one fallback agent run is expected to cost, by task type. Measured on codegen_fix (experiment
+# coding_pipeline_vs_hybrid): about 9 000 per failed answerable task, 11 000 per unanswerable one; the stream
+# data give about 4 000 as the mean over all fallback runs. The other types are rough placeholders.
+FALLBACK_ESTIMATE = {"coding": 6000.0, "math": 3000.0, "data_analysis": 4000.0, "search": 3000.0}
+
+
+def fallback_estimate(task_type: str) -> float:
+    return FALLBACK_ESTIMATE.get(task_type, 4000.0)
+
+
 @dataclass
 class ExecResult:
-    status: str  # solved | unsolvable | failed
+    status: str  # solved | unsolvable | failed | deferred (late fallback, not finished yet)
     answer: str | None
     elapsed: float
 
@@ -100,10 +110,13 @@ async def run_task(task: TaskInfo, model_name: str, pred: Prediction, cfg: Confi
             status, answer = res
             journal.event("pipeline_done", task=task.task_id, status=status)
             return ExecResult(status, answer, time.time() - t0)
-        fallback_on = os.environ.get("HARNESS_FALLBACK", "").lower() != "off" and bool(profile.get("fallback", True))
-        journal.event("pipeline_fallback", task=task.task_id, fallback=fallback_on)
+        fb_mode = os.environ.get("HARNESS_FALLBACK", "on").lower()  # on: agent right away | late | off
+        fallback_on = fb_mode != "off" and bool(profile.get("fallback", True))
+        journal.event("pipeline_fallback", task=task.task_id, fallback=fallback_on, mode=fb_mode)
         if not fallback_on:
             return ExecResult("failed", None, time.time() - t0)
+        if fb_mode == "late":  # the agent is a second tier: the harness runs it after the whole queue is done
+            return ExecResult("deferred", None, time.time() - t0)
     return await run_agent_task(task, model_name, pred, cfg, ledger, journal)
 
 

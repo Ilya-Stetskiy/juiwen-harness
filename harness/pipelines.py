@@ -8,6 +8,7 @@ cannot handle the task (the executor then falls back to the tool agent if enable
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import shutil
 import subprocess
@@ -16,6 +17,7 @@ import tempfile
 from pathlib import Path
 
 from .answers import extract_final, normalize
+from .contradiction import find_contradictions
 from .llm import CallContext, ask
 from .prompts import pick
 
@@ -216,6 +218,11 @@ async def coding(ctx: CallContext, rounds: int = 2):
     tpath, spath = ws / test_file, ws / target
     if not (tpath.is_file() and spath.is_file()):
         return None
+    if os.environ.get("HARNESS_CONTRADICTION", "on").lower() != "off":
+        found = find_contradictions(tpath.read_text(encoding="utf-8", errors="replace"))
+        if found:  # no implementation can pass these tests: no model call, no answer, no fallback
+            ctx.journal.event("contradiction", task=ctx.task.task_id, detail=found[0][:200])
+            return "unsolvable", None
     original = spath.read_text(encoding="utf-8")
     passed, out = await _run_tests(test_file, ws)
     if passed:

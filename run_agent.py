@@ -54,7 +54,60 @@ async def _worker(wid: int, sched: Scheduler, cfg: Config, ledger: TokenLedger, 
             traceback.print_exc(file=sys.stderr)
         actual = ledger.task_cost(task.task_id) - before
         sched.report(task, model, actual)
+        if status == "deferred":
+            state["deferred"].append((task, model, pred))
+            journal.event("task_deferred", task=task.task_id, cost=round(actual, 1), reward=task.reward)
+            continue
         journal.event("task_end", task=task.task_id, status=status, cost=round(actual, 1),
+                      total=round(ledger.spent(), 1), reward=task.reward)
+
+
+async def _late_worker(wid: int, queue: list, cfg: Config, ledger: TokenLedger, journal: Journal,
+                       t_start: float, state: dict) -> None:
+    """Second tier: tasks the pipeline could not solve go to the tool agent, highest reward first, only while the
+    remaining budget covers the agent's expected cost (in-flight runs are reserved)."""
+    from harness.executor import fallback_estimate, run_agent_task
+
+    running = state["running"]  # task id -> (expected cost, ledger cost at start)
+
+    def promised() -> float:
+        """What running agents are still expected to spend: their estimate minus what is already in the ledger."""
+        return sum(max(est_ - (ledger.task_cost(tid) - b0), 0.0) for tid, (est_, b0) in running.items())
+
+    while queue:
+        task, model, pred = queue[0]
+        est = fallback_estimate(task.task_type)
+        left = cfg.budget - ledger.spent()
+        out_of_time = cfg.limits_on and time.time() - t_start > cfg.run_seconds - cfg.max_task_seconds - 60
+        if out_of_time or left < est or (left - promised() < est and not running):
+            queue.pop(0)  # the budget is really exhausted (nothing running that could free it)
+            journal.event("task_end", task=task.task_id, status="unfunded", cost=0.0,
+                          total=round(ledger.spent(), 1), reward=task.reward)
+            continue
+        if left - promised() < est:  # the money is promised to agents still running: wait for them
+            await asyncio.sleep(1.0)
+            continue
+        queue.pop(0)
+        before = ledger.task_cost(task.task_id)
+        running[task.task_id] = (est, before)
+        journal.event("task_resume", task=task.task_id, worker=wid, est=est, reward=task.reward)
+        status, answer = "error", None
+        try:
+            coro = run_agent_task(task, model, pred, cfg, ledger, journal)
+            res = await (asyncio.wait_for(coro, cfg.max_task_seconds) if cfg.limits_on else coro)
+            status, answer = res.status, res.answer
+            if status == "solved" and answer:
+                write_answer(task.dir, answer)
+                state["solved"] += 1
+        except asyncio.TimeoutError:
+            status = "timeout"
+        except Exception as exc:  # noqa: BLE001 - the run must go on
+            journal.event("task_error", task=task.task_id, error=type(exc).__name__, detail=str(exc)[:200])
+            traceback.print_exc(file=sys.stderr)
+        finally:
+            running.pop(task.task_id, None)
+        journal.event("task_end", task=task.task_id, status=status,
+                      cost=round(ledger.task_cost(task.task_id) - before, 1),
                       total=round(ledger.spent(), 1), reward=task.reward)
 
 
@@ -83,10 +136,16 @@ async def amain(tasks_dir: str) -> None:
 
     models = [cfg.force_model] if cfg.force_model else list(MODELS)
     sched = Scheduler(rest, models, Predictor(), float(cfg.budget))
-    state = {"solved": 0}
+    state = {"solved": 0, "deferred": [], "running": {}}
     await asyncio.gather(*[
         _worker(i, sched, cfg, ledger, journal, t_start, state) for i in range(cfg.workers)
     ])
+    if state["deferred"]:
+        queue = sorted(state["deferred"], key=lambda x: -x[0].reward)
+        journal.event("late_phase", n=len(queue), spent=round(ledger.spent(), 1), budget=cfg.budget)
+        await asyncio.gather(*[
+            _late_worker(i, queue, cfg, ledger, journal, t_start, state) for i in range(cfg.workers)
+        ])
     journal.event("run_end", solved_llm=state["solved"], solved_det=n_det, spent=round(ledger.spent(), 1),
                   calls=ledger.calls, skipped=sched.skipped, correction=sched.correction(),
                   seconds=round(time.time() - t_start, 1))
