@@ -1,0 +1,17 @@
+name: search_auto_vs_v1
+hypothesis: >
+  The search registry (year / short: answer is only the requested value, copied from the source, UNSOLVABLE when the
+  documents do not contain it) beats the original prompt v1 (bare answer on the last line, last-line fallback).
+  Run 2 of the 175-task study showed 43% fewer tokens and fewer false answers on unanswerable tasks; this checks it
+  with repeats. Unanswerable tasks are scored as correct when no answer is written.
+backend: gateway
+model: qwen3.6-35b-a3b-noreason
+tasks: {search: 40}
+repeats: 3
+seed: 13
+arms:
+  v1:
+    env: {HARNESS_VARIANT_SEARCH: v1}
+    expect: {search: v1}
+  auto:
+    env: {}
