@@ -715,6 +715,7 @@ def make_report(name: str) -> str:
                              f"{sum(c['hybrid_cost'] for c in sel) / len(sel):.1f} | "
                              f"{sum(c['correct'] for c in sel) / len(sel):.3f} | "
                              f"{(sum(secs) / len(secs)) if secs else float('nan'):.1f} |")
+    lines += ape_table(d, good, meta)
     lines += batch_table(d, good, meta)
     lines += verify_table(name)
     lines += loop_table(d, good, meta)
@@ -835,7 +836,61 @@ def run_experiment(path: Path, dry: bool, allow_holdout: bool = False) -> tuple[
     return "ok", ""
 
 
-# ------------------------------------------------------------------ machine-readable result and verdict
+# ------------------------------------------------------------------ noise floor, acceptance threshold, predictor error
+NOISE_RUN = "baseline0"      # the reference experiment whose repeats define the noise floor
+
+
+def noise_floor(name: str = NOISE_RUN) -> dict | None:
+    """Spread of points per run between repeats of the SAME variant (reference experiment, all arms pooled).
+    The acceptance threshold of the lab is one such standard deviation: a difference smaller than the run-to-run noise
+    of an unchanged harness is not accepted even if its interval excludes 0."""
+    f = RESULTS / name / "cells.jsonl"
+    if not f.exists():
+        return None
+    cells = [json.loads(l) for l in open(f, encoding="utf-8") if l.strip()]
+    good = [c for c in cells if not c["infra"]]
+    sds, means, reps = [], [], []
+    for a in sorted({c["arm"] for c in good}):
+        by_rep = collections.defaultdict(float)
+        for c in good:
+            if c["arm"] == a:
+                by_rep[c["repeat"]] += c["reward"] * c["correct"]
+        if len(by_rep) >= 2:
+            v = list(by_rep.values())
+            sds.append(statistics.stdev(v))
+            means.append(statistics.fmean(v))
+            reps.append(len(v))
+    if not sds:
+        return None
+    return {"experiment": name, "arms": len(sds), "repeats_per_arm": min(reps), "sd_points": round(statistics.fmean(sds), 2),
+            "mean_points": round(statistics.fmean(means), 1), "threshold_points": round(statistics.fmean(sds), 2)}
+
+
+def ape_table(d: Path, good: list[dict], meta: dict) -> list[str]:
+    """Predictor error: |predicted p50 - actual cost| / actual cost per task, median per type and arm (events task_start/task_end)."""
+    rows = []
+    for a in meta["arms"]:
+        reps = sorted({c["repeat"] for c in good if c["arm"] == a})
+        ev = journal_events(d, a, reps)
+        est = {(e["_rep"], e["task"]): e.get("est_p50") for e in ev if e["event"] == "task_start" and e.get("est_p50")}
+        typ = {(c["repeat"], c["task_id"]): c["type"] for c in good if c["arm"] == a}
+        by: dict[str, list[float]] = collections.defaultdict(list)
+        for c in good:
+            if c["arm"] == a and c["hybrid_cost"] > 0 and (c["repeat"], c["task_id"]) in est:
+                by[c["type"]].append(abs(est[(c["repeat"], c["task_id"])] - c["hybrid_cost"]) / c["hybrid_cost"])
+        for t, v in sorted(by.items()):
+            rows.append(f"| {a} | {t} | {len(v)} | {statistics.median(v):.2f} | {statistics.fmean(v):.2f} |")
+        allv = [x for v in by.values() for x in v]
+        if allv:
+            rows.append(f"| {a} | all | {len(allv)} | {statistics.median(allv):.2f} | {statistics.fmean(allv):.2f} |")
+    if not rows:
+        return []
+    return ["", "## Predictor error (APE)", "",
+            "APE = |predicted median cost - actual cost| / actual cost, over tasks that cost tokens (unanswered or solver-closed "
+            "tasks are not in it). 0.5 means the typical prediction is off by half of the real cost.", "",
+            "| arm | type | tasks | median APE | mean APE |", "|---|---|---|---|---|"] + rows
+
+
 def summarize(name: str) -> dict:
     """Numbers that go into the experiment file: points per run by arm and the paired points difference with its CI.
     `verdict` is the lab's mechanical reading (accept / reject / clarify per arm against the first arm); the
@@ -877,7 +932,9 @@ def summarize(name: str) -> dict:
             lo, hi = bootstrap_ci(diffs)
             n = len(ids)
             out["arms"][a]["points_diff_vs_first"] = {"mean": round(sum(diffs), 2), "ci95": [round(lo * n, 2), round(hi * n, 2)]}
-            verdict[a] = "accept" if lo > 0 else "reject" if hi < 0 else "clarify"
+            thr = (noise_floor() or {}).get("threshold_points", 0.0)
+            out["arms"][a]["points_diff_vs_first"]["threshold"] = thr
+            verdict[a] = ("accept" if lo > 0 and sum(diffs) >= thr else "clarify" if lo > 0 else "reject" if hi < 0 else "clarify")
     else:
         verdict = {arms[0]: "baseline"}
     out["verdict"] = verdict
@@ -1096,6 +1153,16 @@ def cmd_verifycmp(names: list[str]) -> None:
                       f"{_fmt(r['caught'])} | {_fmt(r['false_alarm'])} | {r['tokens']:.1f} |")
 
 
+def cmd_noisefloor() -> None:
+    nf = noise_floor()
+    if nf is None:
+        print(f"no reference results ({NOISE_RUN} with at least 2 repeats of an arm)")
+        return
+    print(json.dumps(nf, indent=1))
+    if nf["repeats_per_arm"] < 3:
+        print(f"NOTE: only {nf['repeats_per_arm']} repeats per arm; the spread of 2 numbers is a rough estimate, 3+ are wanted")
+
+
 def selftest() -> None:
     rng = random.Random(1)
     same = [rng.choice([-1, 0, 0, 1]) * 0.33 for _ in range(40)]
@@ -1163,12 +1230,15 @@ def main() -> None:
     q.add_argument("--allow-holdout", action="store_true")
     vc = sub.add_parser("verifycmp")
     vc.add_argument("names", nargs="+")
+    sub.add_parser("noisefloor")
     p = sub.add_parser("report")
     p.add_argument("name")
     sub.add_parser("selftest")
     a = ap.parse_args()
     if a.cmd == "run":
         cmd_run(Path(a.experiment), a.dry, a.allow_holdout)
+    elif a.cmd == "noisefloor":
+        cmd_noisefloor()
     elif a.cmd == "verifycmp":
         cmd_verifycmp(a.names)
     elif a.cmd == "queue":
