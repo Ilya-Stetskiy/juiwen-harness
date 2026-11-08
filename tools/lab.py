@@ -124,6 +124,9 @@ def load_experiment(path: Path, allow_holdout: bool = False) -> dict:
     bad = [t for t in e["tasks"] if t not in sr.SOURCES]
     if bad:
         raise SystemExit(f"unknown task types {bad}; known: {list(sr.SOURCES)}")
+    for m in [e["model"]] + [a.get("model") for a in e["arms"].values() if a.get("model")]:
+        if m != "auto" and m not in sr.ALL_MODELS:     # `model` may be set per arm (variant): one of the 4 or `auto`
+            raise SystemExit(f"unknown model '{m}'; known: {sr.ALL_MODELS} or auto")
     if len(e["arms"]) < 1:
         raise SystemExit("an experiment needs at least one arm")
     return e
@@ -206,8 +209,9 @@ def run_harness(e: dict, arm: dict, tasks_dir: Path, work: Path, base_url: str) 
     env = dict(os.environ, LLM_BASE_URL=base_url, LLM_API_KEY="x",
                HARNESS_CWD=str(work / "cwd"), BUDGET=str(e["budget"]), HARNESS_LOG_DIR=str(work / "logs"),
                HARNESS_WORKERS=str(e["workers"]), HARNESS_LIMITS="off", HARNESS_FALLBACK=str(e["fallback"]))
-    if e["model"] != "auto":   # `model: auto` leaves the choice to the harness, as in the competition
-        env["HARNESS_FORCE_MODEL"] = e["model"]
+    model = arm.get("model", e["model"])   # an arm may carry its own model (S4); `auto` leaves the choice to the harness
+    if model != "auto":
+        env["HARNESS_FORCE_MODEL"] = model
     else:
         env.pop("HARNESS_FORCE_MODEL", None)
     for k, v in {**(e.get("env") or {}), **(arm.get("env") or {})}.items():  # arm overrides experiment-wide env
@@ -234,7 +238,7 @@ def execute(e: dict, arm_name: str, arm: dict, grading: dict, base: Path, base_u
     for tid in grading:
         shutil.copytree(base / "tasks" / tid, work / "tasks" / tid)
     run_harness(e, arm, work / "tasks", work, base_url)
-    rows = sr.grade_chunk(e["model"], 0, work / "tasks", work / "logs", grading)
+    rows = sr.grade_chunk(arm.get("model", e["model"]), 0, work / "tasks", work / "logs", grading)
     seen = variants_seen(work / "logs")
     for kind, want in (arm.get("expect") or {}).items():
         got = dict(seen.get(kind, {}))
@@ -371,6 +375,11 @@ def curve_table(d: Path, good: list[dict], arms: list[str], step: int = 10_000) 
     return out
 
 
+def _arm_models(meta: dict) -> str:
+    per = {a: v.get("model") for a, v in meta["arms"].items() if v.get("model")}
+    return (" (per arm: " + ", ".join(f"{a}=`{m}`" for a, m in per.items()) + ")") if per else ""
+
+
 def make_report(name: str) -> str:
     d = RESULTS / name
     meta = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
@@ -378,7 +387,7 @@ def make_report(name: str) -> str:
     runs = [json.loads(l) for l in open(d / "runs.jsonl", encoding="utf-8") if l.strip()] if (d / "runs.jsonl").exists() else []
     arms = list(meta["arms"])
     lines = [f"# Experiment `{name}`", "", f"Hypothesis: {meta.get('hypothesis') or '-'}", "",
-             f"Model `{meta['model']}`, backend `{meta['backend']}`, fallback `{meta['fallback']}`, "
+             f"Model `{meta['model']}`{_arm_models(meta)}, backend `{meta['backend']}`, fallback `{meta['fallback']}`, "
              f"{meta['n_tasks']} tasks {meta['tasks']}, repeats {meta['repeats']}, seed {meta['seed']}.",
              f"Code version: {meta.get('code_version', 'not recorded')}. Task set: {meta.get('set_name') or 'ad hoc'} "
              f"[{meta.get('set_role', 'adhoc')}] {meta.get('set_hash', 'not recorded')}, "
@@ -407,6 +416,16 @@ def make_report(name: str) -> str:
             ok = sum(c["correct"] for c in sel)
             lines.append(f"| {a} | {t} | {len(sel)} | {acc:.3f} | {points:.1f} | {sd:.3f} | {cost:.1f} | "
                          f"{(sum(c['hybrid_cost'] for c in sel) / ok) if ok else float('nan'):.1f} |")
+    if any(v.get("model") for v in meta["arms"].values()):   # arms with different models: what each one cost per task
+        lines += ["", "## Models per arm", "", "| arm | model | tokens per task | accuracy | seconds per task |", "|---|---|---|---|---|"]
+        for a in arms:
+            sel = [c for c in good if c["arm"] == a]
+            if sel:
+                secs = [c["seconds"] for c in sel if c.get("seconds") is not None]
+                lines.append(f"| {a} | {meta['arms'][a].get('model', meta['model'])} | "
+                             f"{sum(c['hybrid_cost'] for c in sel) / len(sel):.1f} | "
+                             f"{sum(c['correct'] for c in sel) / len(sel):.3f} | "
+                             f"{(sum(secs) / len(secs)) if secs else float('nan'):.1f} |")
     lines += skip_table(good, arms, runs)
     lines += curve_table(d, good, arms)
     if len(arms) > 1:
