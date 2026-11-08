@@ -1,0 +1,13 @@
+# Copy to ~/harness-lab/dispatcher.yaml. All gateway stop thresholds of the lab are here (see tools/dispatcher.py).
+filler: stream                 # stream | off
+filler_week_stop_pct: 60       # data collection stops at this share of the weekly limit
+filler_day_stop_pct: 72        # ... pauses at this daily capacity share
+filler_day_resume_pct: 65      # ... and resumes below this
+filler_session_min_remaining: 3000
+exp_week_stop_pct: 90          # experiments (lab.py) may use more; also replaces the old fixed 600000 week guard of lab.py
+exp_day_stop_pct: 88
+exp_session_min_remaining: 1500
+chunk: 8                       # tasks per filler portion
+seed: 11
+rpm: 55
+models: ""                     # empty = all four
