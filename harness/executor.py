@@ -117,7 +117,10 @@ async def run_task(task: TaskInfo, model_name: str, pred: Prediction, cfg: Confi
             status, answer = res
             journal.event("pipeline_done", task=task.task_id, status=status)
             if status == "solved" and judge.mode() != "off":   # verifier: accept / recheck / unsolvable (S10)
-                status, answer = await _verify_loop(ctx, pipeline, task, model_name, pred, cfg, ledger, journal, status, answer)
+                try:
+                    status, answer = await _verify_loop(ctx, pipeline, task, model_name, pred, cfg, ledger, journal, status, answer)
+                except (limits.CensorStop, budget.BudgetStop) as exc:   # the first answer stands
+                    journal.event("task_stopped", task=task.task_id, by=type(exc).__name__, detail=str(exc)[:120], stage="verify")
             return ExecResult(status, answer, time.time() - t0)
         fb_mode = os.environ.get("HARNESS_FALLBACK", "on").lower()  # on: agent right away | late | off
         fallback_on = fb_mode != "off" and bool(profile.get("fallback", True))
