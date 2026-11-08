@@ -491,7 +491,7 @@ def cmd_curve(a) -> None:
         run = read_run(exp, arm, int(rep or 1))
         pool, _ = load_stream([f for f in stream_files(a) if f.exists()]) if a.pool else (Store(), {})
         sets.append((run["tasks"], Store([run["store"].layers[0]] + pool.layers, {**pool.kinds, **run["store"].kinds}), run["workers"], run["mode"], ctx["models"]))
-        title = f"tasks of {exp}/{arm}_{rep or 1} ({len(run['tasks'])}), outcomes of that run completed from the stream pool"
+        title = f"tasks of {exp}/{arm}_{rep or 1} ({len(run['tasks'])}), recorded outcomes of that run (missing pairs imputed from the run itself{', stream pool added' if a.pool else ''})"
     else:
         store, attrs = load_stream([f for f in stream_files(a) if f.exists()])
         quota = {k: int(v) for k, v in (x.split(":") for x in a.unanswerable.split(",") if x)}
