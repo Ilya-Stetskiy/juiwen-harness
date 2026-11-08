@@ -1,0 +1,17 @@
+name: math_v1_vs_v2
+hypothesis: >
+  The v2 prompt ("computes step by step, never hard-code") beats v1 ("prints the final integer answer").
+  Earlier runs on the same 40 tasks gave v2-fixed 35-39 correct and v1 28-31, but both arms shared the gateway
+  with a running stream, so infrastructure noise was not separated from the prompt effect.
+backend: gateway
+model: qwen3.6-35b-a3b-noreason
+tasks: {math: 40}
+repeats: 3
+seed: 7
+arms:
+  v1:
+    env: {HARNESS_VARIANT_MATH: v1}
+    expect: {math: v1}
+  v2:
+    env: {HARNESS_VARIANT_MATH: v2}
+    expect: {math: v2}
