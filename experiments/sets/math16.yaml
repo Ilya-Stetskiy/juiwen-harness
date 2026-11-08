@@ -4,3 +4,8 @@ tasks: {math: 16}
 rewards: {low: 1, high: 5, seed: 41}
 seed: 211
 exclude: [verify_frozen40]
+frozen:
+  set_hash: "82ec84df5d6f"
+  n_tasks: 16
+  n_unanswerable: 0
+  by_type: {"math": 16}
