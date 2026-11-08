@@ -58,6 +58,15 @@ def free_p(task, answer, context: dict) -> tuple[float, str]:
         return _placeholder(task, answer, context)
 
 
+def _verifier():
+    """harness/verifier.py of session answer-verifier, or None (module or model missing: the placeholder takes over)."""
+    try:
+        from . import verifier
+        return verifier if verifier.load_model() else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def verify_answer(ctx, task, answer: str | None) -> dict | None:
     m = mode()
     if m == "off" or not answer:
@@ -65,16 +74,26 @@ async def verify_answer(ctx, task, answer: str | None) -> dict | None:
     context = dict(ctx.extra)
     judge = None
     spent0 = ctx.ledger.task_cost(task.task_id)
-    if m == "judge":
+    p_free, level = free_p(task, answer, context)
+    p = p_free
+    ver = _verifier()
+    spec = ver.judge_prompt(task, answer, context) if (m == "judge" and ver is not None) else None
+    if m == "judge" and spec is not None:
+        # the judge of the verifier session: its prompt and parser, its fitted model uses judge_yes (and the quote checks)
+        from .llm import ask
+        system, user, max_tokens = spec
+        reply = await ask(ctx, system, user, max_tokens)
+        context.update(ver.parse_judge(reply, task, answer, context))
+        judge = bool(context.get("judge_yes"))
+        v = ver.verify_detailed(task, answer, context)
+        p, level = float(v.p), v.level
+    elif m == "judge":
         from .llm import ask
         shown = answer if len(answer) <= 300 else answer[:300]
         reply = await ask(ctx, JUDGE_SYSTEM, f"Task:\n{task.instruction[:3000]}\n\nProposed final answer: {shown}\n\nCorrect?", 6)
         judge = reply.strip().upper().startswith("YES")
         context["judge_yes"] = judge
-    p, level = free_p(task, answer, context)
-    p_free = p
-    if judge is not None:   # placeholder combination until the fitted model with judge signals exists
-        p = (p + (0.9 if judge else 0.1)) / 2
+        p = (p_free + (0.9 if judge else 0.1)) / 2   # placeholder combination
         level += "+judge"
     tokens = ctx.ledger.task_cost(task.task_id) - spent0
     out = {"p": round(p, 4), "p_free": round(p_free, 4), "level": level, "judge": judge, "tokens": round(tokens, 1)}
