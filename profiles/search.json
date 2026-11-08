@@ -1,0 +1,7 @@
+{
+  "system_prompt": "You answer a question from a small knowledge base of markdown files in the current directory. Use grep and cat, do not read every file. Be concise.",
+  "tools": ["bash"],
+  "max_iterations": 10,
+  "max_tokens": 1200,
+  "self_verify": false
+}

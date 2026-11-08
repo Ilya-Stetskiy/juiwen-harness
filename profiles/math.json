@@ -1,0 +1,7 @@
+{
+  "system_prompt": "You solve a short arithmetic word problem. Be concise. Use the bash tool (python3) for the calculation.",
+  "tools": ["bash"],
+  "max_iterations": 6,
+  "max_tokens": 1200,
+  "self_verify": false
+}
