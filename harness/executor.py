@@ -39,6 +39,7 @@ class ExecResult:
     status: str  # solved | unsolvable | failed | deferred (late fallback, not finished yet)
     answer: str | None
     elapsed: float
+    recheck: dict | None = None   # set when the verifier wants a later recheck (HARNESS_RECHECK_QUEUE=later)
 
 
 def load_profile(task_type: str) -> dict:
@@ -121,7 +122,7 @@ async def run_task(task: TaskInfo, model_name: str, pred: Prediction, cfg: Confi
                     status, answer = await _verify_loop(ctx, pipeline, task, model_name, pred, cfg, ledger, journal, status, answer)
                 except (limits.CensorStop, budget.BudgetStop) as exc:   # the first answer stands
                     journal.event("task_stopped", task=task.task_id, by=type(exc).__name__, detail=str(exc)[:120], stage="verify")
-            return ExecResult(status, answer, time.time() - t0)
+            return ExecResult(status, answer, time.time() - t0, ctx.extra.get("defer"))
         fb_mode = os.environ.get("HARNESS_FALLBACK", "on").lower()  # on: agent right away | late | off
         fallback_on = fb_mode != "off" and bool(profile.get("fallback", True))
         journal.event("pipeline_fallback", task=task.task_id, fallback=fallback_on, mode=fb_mode)
@@ -138,16 +139,102 @@ def recheck_model(default: str) -> str:
     return os.environ.get("HARNESS_RECHECK_MODEL", "qwen3.6-35b-a3b").strip() or default
 
 
+def other_model(model_name: str) -> str:
+    """HARNESS_OTHER_MODEL: an executor of ANOTHER family for the independent answer (default qwen3.8-27b, reasoning).
+    If the first answer already came from it, the qwen3.6 reasoning model is used."""
+    import os
+    m = os.environ.get("HARNESS_OTHER_MODEL", "qwen3.8-27b").strip() or "qwen3.8-27b"
+    return "qwen3.6-35b-a3b" if model_name.startswith("qwen3.8") else m
+
+
+def recheck_queue() -> str:
+    """HARNESS_RECHECK_QUEUE=inline (default: the recheck runs at once in the same worker) | later (the task goes back to
+    the sorter: after the main queue is done, doubtful tasks are ranked by reward x (1 - p) / expected cost and rechecked
+    while the budget allows)."""
+    import os
+    return "later" if os.environ.get("HARNESS_RECHECK_QUEUE", "inline").strip().lower() == "later" else "inline"
+
+
+async def recheck_one(task, model_name, pred, cfg, ledger, journal, answer, p, extra):
+    """One recheck of a doubtful answer. HARNESS_RECHECK_MODE:
+         strong  the same pipeline with the stronger model; the answer with the higher verifier p stays (HARNESS_DISAGREE=strong:
+                 the stronger model wins);
+         other   an independent answer from a model of another family (no judge call on it); agreement is a signal for the
+                 verifier (agree_other, level `other`), a disagreement goes to HARNESS_DISAGREE: higher_p (default: the second
+                 answer is scored by the free verifier) | strong (trust the second) | third (a third opinion from the strong
+                 model, majority of three, no majority = first answer).
+       Returns (answer, p, changed)."""
+    import os
+
+    from . import judge
+    from .llm import CallContext
+    from .pipelines import PIPELINES
+
+    pipeline = PIPELINES.get(task.task_type)
+    if pipeline is None:
+        return answer, p, False
+    mode = os.environ.get("HARNESS_RECHECK_MODE", "strong").strip().lower()
+    rule = os.environ.get("HARNESS_DISAGREE", "higher_p")
+
+    async def run(model):
+        c = CallContext(task, model, pred, cfg, ledger, journal)
+        c.extra["recheck"] = True
+        try:
+            res = await pipeline(c)
+        except Exception:  # noqa: BLE001 - also CensorStop / BudgetStop: the first answer stands
+            return None, c
+        return (res[1] if res is not None and res[0] == "solved" else None), c
+
+    norm = lambda a: (a or "").strip().lower()
+    if mode == "other":
+        m2 = other_model(model_name)
+        a2, c2 = await run(m2)
+        if a2 is None:
+            journal.event("verify_retry", task=task.task_id, action="other", model=m2, p_before=p, p_after=None, same_answer=None, taken=False)
+            return answer, p, False
+        same = norm(a2) == norm(answer)
+        v = judge.free_verdict(task, answer, dict(extra, agree_other=same, other_answered=True))
+        p_new = v["p"] if v else p
+        final, taken = answer, False
+        if not same:
+            if rule == "strong":
+                final, taken = a2, True
+            elif rule == "third":
+                a3, _ = await run(recheck_model(model_name))
+                if a3 is not None and norm(a3) == norm(a2):
+                    final, taken = a2, True
+                elif a3 is not None and norm(a3) == norm(answer):
+                    final = answer
+            else:
+                v2 = judge.free_verdict(task, a2, dict(c2.extra, agree_other=False, other_answered=True))
+                if v2 and v2["p"] > p_new:
+                    final, taken = a2, True
+        journal.event("verify_retry", task=task.task_id, action="other", model=m2, p_before=p, p_after=p_new, same_answer=same,
+                      taken=taken, rule=rule)
+        return final, p_new, taken
+    m2 = recheck_model(model_name)
+    a2, c2 = await run(m2)
+    if a2 is None:
+        return answer, p, False
+    same = norm(a2) == norm(answer)
+    try:
+        v2 = await judge.verify_answer(c2, task, a2)
+    except Exception:  # noqa: BLE001
+        v2 = None
+    take = bool(v2) and (v2["p"] > p if rule != "strong" else True)
+    journal.event("verify_retry", task=task.task_id, action="recheck", model=m2, p_before=p, p_after=(v2 or {}).get("p"),
+                  same_answer=same, taken=take and not same)
+    return (a2, v2["p"], True) if take else (answer, p, False)
+
+
 async def _verify_loop(ctx, pipeline, task, model_name, pred, cfg, ledger, journal, status, answer):
     """Verifier verdict and what follows (HARNESS_VERIFY_ACTION):
        log       only the `verify` event;
        retry     old rule: p below HARNESS_VERIFY_MIN -> same pipeline once more, keep the higher p;
-       recheck   verdict "recheck" -> the pipeline again with the stronger model (HARNESS_RECHECK_MODEL), at most
-                 HARNESS_RECHECK_MAX times (default 1); two answers that differ are settled by HARNESS_DISAGREE:
-                 higher_p (default: the answer with the higher verifier p) | strong (trust the stronger executor).
+       recheck   verdict "recheck" -> `recheck_one` (HARNESS_RECHECK_MODE strong|other, HARNESS_RECHECK_QUEUE inline|later,
+                 HARNESS_RECHECK_TYPES = types that are rechecked, default all).
        verdict "unsolvable" (p below HARNESS_VERIFY_GIVEUP, default 0 = never): no more tokens; the answer is still
-       submitted unless HARNESS_SUBMIT_UNSOLVABLE=off.
-    The recheck runs right away in this worker; sending the task back to the sorter is not done (skeleton)."""
+       submitted unless HARNESS_SUBMIT_UNSOLVABLE=off."""
     import os
 
     from . import judge
@@ -158,27 +245,28 @@ async def _verify_loop(ctx, pipeline, task, model_name, pred, cfg, ledger, journ
         return status, answer
     act = judge.action()
     best_p = v["p"]
-    attempts = 0
-    limit = 1 if act == "retry" else int(os.environ.get("HARNESS_RECHECK_MAX", "1") or 1)
-    while act in ("retry", "recheck") and attempts < limit and (
-            (act == "retry" and best_p < judge.min_p()) or (act == "recheck" and judge.verdict(best_p) == "recheck")):
-        attempts += 1
-        m2 = model_name if act == "retry" else recheck_model(model_name)
-        ctx2 = CallContext(task, m2, pred, cfg, ledger, journal)
+    if act == "retry" and best_p < judge.min_p():
+        ctx2 = CallContext(task, model_name, pred, cfg, ledger, journal)
         ctx2.extra["recheck"] = True
         try:
             res2 = await pipeline(ctx2)
         except Exception:  # noqa: BLE001 - the first answer stands (also on CensorStop / BudgetStop)
-            break
-        if res2 is None or res2[0] != "solved":
-            break
-        v2 = await judge.verify_answer(ctx2, task, res2[1])
-        same = (res2[1] or "").strip().lower() == (answer or "").strip().lower()
-        take = bool(v2) and (v2["p"] > best_p if os.environ.get("HARNESS_DISAGREE", "higher_p") != "strong" else True)
-        journal.event("verify_retry", task=task.task_id, action=act, model=m2, p_before=best_p, p_after=(v2 or {}).get("p"),
-                      same_answer=same, taken=take and not same)
-        if take:
-            status, answer, best_p = res2[0], res2[1], v2["p"]
+            res2 = None
+        if res2 is not None and res2[0] == "solved":
+            v2 = await judge.verify_answer(ctx2, task, res2[1])
+            same = (res2[1] or "").strip().lower() == (answer or "").strip().lower()
+            take = bool(v2) and v2["p"] > best_p
+            journal.event("verify_retry", task=task.task_id, action=act, model=model_name, p_before=best_p,
+                          p_after=(v2 or {}).get("p"), same_answer=same, taken=take and not same)
+            if take:
+                status, answer, best_p = res2[0], res2[1], v2["p"]
+    elif act == "recheck" and judge.verdict(best_p) == "recheck" and task.task_type in {
+            t.strip() for t in os.environ.get("HARNESS_RECHECK_TYPES", task.task_type).split(",")}:
+        if recheck_queue() == "later":
+            ctx.extra["defer"] = {"p": best_p, "answer": answer, "model": model_name, "extra": dict(ctx.extra)}
+            journal.event("recheck_deferred", task=task.task_id, p=best_p, reward=task.reward)
+        else:
+            answer, best_p, _ = await recheck_one(task, model_name, pred, cfg, ledger, journal, answer, best_p, ctx.extra)
     if judge.verdict(best_p) == "unsolvable":
         journal.event("verdict_unsolvable", task=task.task_id, p=best_p)
         if os.environ.get("HARNESS_SUBMIT_UNSOLVABLE", "on").strip().lower() == "off":

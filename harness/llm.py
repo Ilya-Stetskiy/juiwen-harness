@@ -83,14 +83,19 @@ async def ask(ctx: CallContext, system: str, user: str, max_tokens: int) -> str:
 
 async def _ask_once(ctx: CallContext, system: str, user: str, max_tokens: int, temperature: float | None = None) -> str:
     """Gate (censor limits, hard budget reservation) around one raw call. Both gates are off by default."""
-    from . import budget, limits
+    from . import budget, limits, rpm
 
     limits.check(ctx)                                   # HARNESS_CENSOR=log|enforce
     est = budget.reserve(ctx, len(system) + len(user), effective_max_tokens(ctx.model, max_tokens),
                          recheck=bool(ctx.extra.get("recheck")))   # HARNESS_BUDGET_HARD=on
     before = ctx.ledger.task_cost(ctx.task.task_id)
+    await rpm.acquire(ctx.journal, ctx.task.task_id)    # HARNESS_RPM_LIMIT>0 waits for a free request slot
     try:
         return await _raw_call(ctx, system, user, max_tokens, temperature)
+    except Exception as exc:  # noqa: BLE001
+        if rpm.is_429(exc):
+            ctx.journal.event("rate_429", task=ctx.task.task_id, model=ctx.model, in_last_minute=rpm.count_last_minute())
+        raise
     finally:
         budget.release(est, ctx.ledger.task_cost(ctx.task.task_id) - before)
 

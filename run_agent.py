@@ -50,6 +50,8 @@ async def _worker(wid: int, sched: Scheduler, cfg: Config, ledger: TokenLedger, 
             if status == "solved" and answer:
                 write_answer(task.dir, guard.scrub_answer(answer, task.task_id, journal))
                 state["solved"] += 1
+                if res.recheck:   # HARNESS_RECHECK_QUEUE=later: back into the queue, ranked again after the main pass
+                    state["recheck"].append((task, model, pred, res.recheck))
             elif status == "unsolvable" and guess.mode() != "off":   # HARNESS_GUESS_UNSOLVABLE
                 g = await guess.guess(task, model, pred, cfg, ledger, journal)
                 if g:
@@ -67,6 +69,28 @@ async def _worker(wid: int, sched: Scheduler, cfg: Config, ledger: TokenLedger, 
             continue
         journal.event("task_end", task=task.task_id, status=status, cost=round(actual, 1),
                       total=round(ledger.spent(), 1), reward=task.reward)
+
+
+async def _recheck_worker(queue: list, cfg: Config, ledger: TokenLedger, journal: Journal) -> None:
+    """Second look at doubtful answers, best expected gain first: reward x (1 - p) / expected cost. Runs while the budget
+    (stop line 97%) covers twice the expected cost of a recheck."""
+    from harness.executor import recheck_one
+
+    while queue:
+        task, model, pred, info = queue.pop(0)
+        est = 2.0 * max(pred.tokens_p50, 300.0)
+        if cfg.budget * 0.97 - ledger.spent() < est:
+            journal.event("recheck_skipped", task=task.task_id, reason="budget", left=round(cfg.budget * 0.97 - ledger.spent(), 1))
+            continue
+        before = ledger.task_cost(task.task_id)
+        try:
+            ans, p, changed = await recheck_one(task, model, pred, cfg, ledger, journal, info["answer"], info["p"], info["extra"])
+        except Exception as exc:  # noqa: BLE001
+            journal.event("task_error", task=task.task_id, error=type(exc).__name__, detail=str(exc)[:200])
+            continue
+        if changed and ans:
+            write_answer(task.dir, guard.scrub_answer(ans, task.task_id, journal))
+        journal.event("recheck_done", task=task.task_id, changed=changed, p=round(p, 4), cost=round(ledger.task_cost(task.task_id) - before, 1))
 
 
 async def _late_worker(wid: int, queue: list, cfg: Config, ledger: TokenLedger, journal: Journal,
@@ -150,10 +174,14 @@ async def amain(tasks_dir: str) -> None:
 
     models = [cfg.force_model] if cfg.force_model else list(MODELS)
     sched = make_scheduler(rest, models, make_predictor(), float(cfg.budget))
-    state = {"solved": 0, "deferred": [], "running": {}}
+    state = {"solved": 0, "deferred": [], "running": {}, "recheck": []}
     await asyncio.gather(*[
         _worker(i, sched, cfg, ledger, journal, t_start, state) for i in range(cfg.workers)
     ])
+    if state["recheck"]:
+        queue = sorted(state["recheck"], key=lambda x: -x[0].reward * (1.0 - x[3]["p"]) / max(x[2].tokens_p50, 100.0))
+        journal.event("recheck_phase", n=len(queue), spent=round(ledger.spent(), 1), budget=cfg.budget)
+        await asyncio.gather(*[_recheck_worker(queue, cfg, ledger, journal) for _ in range(cfg.workers)])
     if state["deferred"]:
         queue = list(state["deferred"])  # HARNESS_LATE_ORDER=fifo keeps the order in which the pipeline gave up
         if os.environ.get("HARNESS_LATE_ORDER", "reward").lower() != "fifo":

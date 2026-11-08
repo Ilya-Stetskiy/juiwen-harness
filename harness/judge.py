@@ -80,6 +80,15 @@ def verdict(p: float) -> str:
     return "accept" if p >= accept else ("unsolvable" if p < giveup else "recheck")
 
 
+def free_verdict(task, answer: str, context: dict) -> dict | None:
+    """p of an answer from the verifier model with the given context (agree_other, other_answered, runs, ...), no tokens."""
+    ver = _verifier()
+    if ver is None or not answer:
+        return None
+    v = ver.verify_detailed(task, answer, context)
+    return {"p": float(v.p), "level": v.level}
+
+
 def _verifier():
     """harness/verifier.py of session answer-verifier, or None (module or model missing: the placeholder takes over)."""
     try:

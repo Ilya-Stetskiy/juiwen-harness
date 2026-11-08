@@ -228,6 +228,28 @@ def test_censor_budget_verdict_guess():
         assert asyncio.run(guess.guess(task(), "m", None, None, None, FakeJournal())) is None
 
 
+def test_rpm_and_recheck_helpers():
+    import time
+    from harness import executor, rpm
+    assert rpm.limit() == 0
+    with Env(HARNESS_RPM_LIMIT="2"):
+        rpm._stamps.clear()
+        t0 = time.time()
+        for _ in range(2):
+            asyncio.run(rpm.acquire(None))
+        assert rpm.count_last_minute() == 2 and time.time() - t0 < 1.0
+        rpm._stamps[0] -= 59.8   # the oldest request is about to leave the window: the third call waits ~0.3 s
+        t1 = time.time()
+        asyncio.run(rpm.acquire(None))
+        assert 0.1 < time.time() - t1 < 3.0
+    rpm._stamps.clear()
+    assert rpm.is_429(RuntimeError("Error code: 429 - RateLimitError"))
+    assert executor.other_model("qwen3.6-35b-a3b-noreason") == "qwen3.8-27b" and executor.other_model("qwen3.8-27b").startswith("qwen3.6")
+    assert executor.recheck_queue() == "inline"
+    with Env(HARNESS_RECHECK_QUEUE="later"):
+        assert executor.recheck_queue() == "later"
+
+
 def main():
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
