@@ -150,6 +150,7 @@ def prompt_propose(n: int) -> str:
 - Rechecking a doubtful answer with the same pipeline and a stronger model replaced only 3 of 27 answers, points unchanged.
 - Batching 4 math tasks into one request with prompt `compute` kept accuracy (0.91 vs 0.75, 16 tasks) and cut requests per task from 1.25 to 0.31.
 - A checker model of another family (qwen3.8-27b) agreeing with the first answer is a strong signal (verifier level `other`).
+Real costs for planning (ledger tokens at the gateway): one run of baseline0 (100 tasks, mixed) is about 60000 tokens per arm and repeat, plus 30000 if the verifier judge is on; 40 mixed tasks about 25000; 16 math tasks about 5000-9000; 40 math tasks about 20000. The whole experiment (arms x repeats) should stay under 100000 tokens; prefer small frozen sets (math16, verify_frozen40, dev_math, dev_data_analysis) to baseline0.
 Finished experiments:
 {digest()}
 
