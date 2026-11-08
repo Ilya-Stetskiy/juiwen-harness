@@ -18,6 +18,10 @@ What it adds on top of the ad-hoc A/B scripts:
 usage:
   lab.py run <experiment.yaml> [--dry]     run (or resume) and write the report
   lab.py report <name>                     rebuild the report from cells.jsonl
+  lab.py sets list|freeze|verify [name..]  frozen named task sets (experiments/sets/*.yaml)
+  lab.py queue submit <file..>             put experiment files into experiments/queue/pending
+  lab.py queue run [--detach]              run pending experiments one after another (resumes a broken one)
+  lab.py queue status | retry <name>       what is pending/running/done; put an aborted one back to pending
   lab.py selftest                          check the statistics code without any model call
 """
 from __future__ import annotations
@@ -29,6 +33,7 @@ import json
 import os
 import random
 import shutil
+import signal
 import statistics
 import subprocess
 import sys
@@ -103,6 +108,9 @@ def load_experiment(path: Path, allow_holdout: bool = False) -> dict:
         if k not in e:
             raise SystemExit(f"{path}: missing key '{k}'")
     e.setdefault("hypothesis", "")
+    e.setdefault("id", e.get("name"))      # fields of spec 4.6 that the runner only carries along
+    e.setdefault("author", "human")        # human | orchestrator
+    e.setdefault("change", "")             # what differs from the code/config of the baseline (free text or branch)
     e.setdefault("backend", "gateway")
     e.setdefault("model", "qwen3.6-35b-a3b-noreason")
     e.setdefault("repeats", 3)
@@ -449,6 +457,13 @@ def make_report(name: str) -> str:
 
 # ------------------------------------------------------------------ commands
 def cmd_run(path: Path, dry: bool, allow_holdout: bool = False) -> None:
+    status, why = run_experiment(path, dry, allow_holdout)
+    if status == "aborted":
+        sys.exit(2)
+
+
+def run_experiment(path: Path, dry: bool, allow_holdout: bool = False) -> tuple[str, str]:
+    """Run (or resume) one experiment file. Returns (status, reason): status is ok / dry / aborted."""
     e = load_experiment(path, allow_holdout)
     name = e["name"]
     d = RESULTS / name
@@ -459,7 +474,8 @@ def cmd_run(path: Path, dry: bool, allow_holdout: bool = False) -> None:
     if frozen and frozen.get("set_hash") != set_hash(grading):
         raise SystemExit(f"set '{e['set']}' no longer builds to its frozen hash {frozen.get('set_hash')} "
                          f"(got {set_hash(grading)}): the dataset or the sampler changed; do not use this set")
-    manifest = dict(name=name, hypothesis=e["hypothesis"], model=e["model"], backend=e["backend"],
+    manifest = dict(name=name, id=e["id"], author=e["author"], change=e["change"], mode="real", limits="off",
+                    hypothesis=e["hypothesis"], model=e["model"], backend=e["backend"],
                     fallback=e["fallback"], tasks=e["tasks"], n_tasks=len(grading), repeats=e["repeats"], seed=e["seed"],
                     arms=e["arms"], task_ids=list(grading), started=time.strftime("%Y-%m-%d %H:%M:%S"),
                     code_version=code_version(), budget=e["budget"], env=e.get("env"),
@@ -474,7 +490,7 @@ def cmd_run(path: Path, dry: bool, allow_holdout: bool = False) -> None:
     if dry:
         for rep, a in plan:
             say(f"  would run arm {a} repeat {rep}: env {e['arms'][a].get('env')}")
-        return
+        return "dry", ""
     try:
         for rep, a in plan:
             base_url = check_infrastructure(e)
@@ -494,12 +510,208 @@ def cmd_run(path: Path, dry: bool, allow_holdout: bool = False) -> None:
         (d / "ABORTED.txt").write_text(str(ex) + "\n", encoding="utf-8")
         if cells_path.exists():
             (d / "report.md").write_text(make_report(name) + f"\n**Experiment aborted:** {ex}\n", encoding="utf-8")
-        sys.exit(2)
+        return "aborted", str(ex)
     (d / "ABORTED.txt").unlink(missing_ok=True)
     rep_text = make_report(name)
     (d / "report.md").write_text(rep_text, encoding="utf-8")
     shutil.rmtree(WORK / name, ignore_errors=True)
     print(rep_text)
+    return "ok", ""
+
+
+# ------------------------------------------------------------------ machine-readable result and verdict
+def summarize(name: str) -> dict:
+    """Numbers that go into the experiment file: points per run by arm and the paired points difference with its CI.
+    `verdict` is the lab's mechanical reading (accept / reject / clarify per arm against the first arm); the
+    `decision` of spec 4.6 stays with a human."""
+    d = RESULTS / name
+    meta = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+    cells = [json.loads(l) for l in open(d / "cells.jsonl", encoding="utf-8") if l.strip()]
+    good = [c for c in cells if not c["infra"]]
+    arms = list(meta["arms"])
+    out: dict = {"set": f"{meta.get('set_name') or 'ad hoc'} {meta.get('set_hash')}", "code_version": meta.get("code_version"),
+                 "n_tasks": meta["n_tasks"], "repeats": meta["repeats"], "arms": {}, "log": str(d)}
+    for a in arms:
+        sel = [c for c in good if c["arm"] == a]
+        reps = sorted({c["repeat"] for c in sel})
+        if not sel:
+            continue
+        pts = [sum(c["reward"] * c["correct"] for c in sel if c["repeat"] == r) for r in reps]
+        toks = [sum(c["hybrid_cost"] for c in sel if c["repeat"] == r) for r in reps]
+        out["arms"][a] = {"model": meta["arms"][a].get("model", meta["model"]), "runs": len(reps),
+                          "points_per_run": round(sum(pts) / len(pts), 2), "tokens_per_run": round(sum(toks) / len(toks)),
+                          "accuracy": round(sum(c["correct"] for c in sel) / len(sel), 4),
+                          "infra_broken_cells": sum(c["infra"] for c in cells if c["arm"] == a)}
+    verdict: dict[str, str] = {}
+    if len(arms) > 1 and arms[0] in out["arms"]:
+        def per_task(a):
+            acc = collections.defaultdict(list)
+            for c in good:
+                if c["arm"] == a:
+                    acc[c["task_id"]].append(c["reward"] * c["correct"])
+            return {k: sum(v) / len(v) for k, v in acc.items()}
+        base = per_task(arms[0])
+        for a in arms[1:]:
+            x = per_task(a)
+            ids = sorted(set(x) & set(base))
+            if len(ids) < 5:
+                verdict[a] = "clarify"
+                continue
+            diffs = [x[i] - base[i] for i in ids]
+            lo, hi = bootstrap_ci(diffs)
+            n = len(ids)
+            out["arms"][a]["points_diff_vs_first"] = {"mean": round(sum(diffs), 2), "ci95": [round(lo * n, 2), round(hi * n, 2)]}
+            verdict[a] = "accept" if lo > 0 else "reject" if hi < 0 else "clarify"
+    else:
+        verdict = {arms[0]: "baseline"}
+    out["verdict"] = verdict
+    return out
+
+
+LAB_MARK = "# ---- written by lab.py: status and result of this experiment (the part above is the experiment) ----"
+
+
+def write_lab_block(path: Path, block: dict) -> None:
+    """Append (or replace) the result block at the end of the experiment file; the experiment text itself is never touched."""
+    import yaml
+    text = path.read_text(encoding="utf-8")
+    if LAB_MARK in text:
+        text = text[:text.index(LAB_MARK)]
+    text = text.rstrip("\n") + "\n\n" + LAB_MARK + "\n" + yaml.safe_dump(block, sort_keys=False, allow_unicode=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+# ------------------------------------------------------------------ queue: pending / running / done
+def qdir(kind: str) -> Path:
+    d = QUEUE / kind
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def queue_submit(files: list[str]) -> None:
+    import yaml
+    for f in files:
+        src = Path(f)
+        e = yaml.safe_load(src.read_text(encoding="utf-8"))
+        name = e.get("name")
+        load_experiment(src, allow_holdout=True)   # validates; the holdout guard is applied when it runs
+        for kind in ("pending", "running", "done"):
+            if (qdir(kind) / f"{name}.yaml").exists():
+                raise SystemExit(f"{name}: already in the queue ({kind}); rename the experiment")
+        shutil.copyfile(src, qdir("pending") / f"{name}.yaml")
+        print(f"queued {name}")
+
+
+def queue_status() -> None:
+    import yaml
+    for kind in ("pending", "running", "done"):
+        for f in sorted(qdir(kind).glob("*.yaml")):
+            top = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+            res = top.get("result") or {}
+            print(f"{kind:8} {f.stem:36} {top.get('status', '-'):9} verdict {res.get('verdict', '-')}")
+    pid_file = QUEUE / "runner.pid"
+    if pid_file.exists():
+        pid = int(pid_file.read_text() or 0)
+        print(f"runner: pid {pid} {'alive' if _alive(pid) else 'DEAD (stale lock; `queue run` will resume)'}")
+    else:
+        print("runner: not running")
+
+
+def queue_run(allow_holdout: bool, keep_going: bool) -> None:
+    lock = QUEUE / "runner.pid"
+    QUEUE.mkdir(parents=True, exist_ok=True)
+    if lock.exists():
+        try:
+            pid = int(lock.read_text() or 0)
+        except ValueError:
+            pid = 0
+        if pid and _alive(pid) and pid != os.getpid():
+            raise SystemExit(f"queue runner already running (pid {pid})")
+    lock.write_text(str(os.getpid()))
+    try:
+        while True:
+            if (QUEUE / "STOP").exists():
+                say("STOP file present: leaving the queue")
+                break
+            todo = sorted(qdir("running").glob("*.yaml")) or sorted(qdir("pending").glob("*.yaml"))
+            if not todo:
+                say("queue is empty")
+                break
+            f = todo[0]
+            if f.parent.name == "pending":
+                f = Path(shutil.move(str(f), str(qdir("running") / f.name)))
+                say(f"queue: started {f.stem}")
+            else:
+                say(f"queue: resuming {f.stem} (interrupted earlier)")
+            started = time.strftime("%Y-%m-%d %H:%M:%S")
+            write_lab_block(f, {"status": "running", "started": started})
+            try:
+                status, why = run_experiment(f, False, allow_holdout)
+            except SystemExit as ex:   # invalid experiment (unknown set, holdout without permission, ...)
+                status, why = "invalid", str(ex)
+            except Exception as ex:   # noqa: BLE001 - one broken experiment must not kill the queue
+                status, why = "failed", f"{type(ex).__name__}: {ex}"
+            block: dict = {"status": status, "started": started, "finished": time.strftime("%Y-%m-%d %H:%M:%S")}
+            if why:
+                block["reason"] = why
+            try:
+                name = __import__("yaml").safe_load(f.read_text(encoding="utf-8"))["name"]
+                if (RESULTS / name / "cells.jsonl").exists():
+                    block["result"] = summarize(name)
+            except Exception as ex:   # noqa: BLE001
+                block["result_error"] = f"{type(ex).__name__}: {ex}"
+            write_lab_block(f, block)
+            os.replace(f, qdir("done") / f.name)
+            say(f"queue: {f.stem} -> done ({status})")
+            if status != "ok" and not keep_going:
+                say("queue stops after a failed experiment (use --keep-going to go on); `queue retry <name>` re-queues it")
+                break
+    finally:
+        lock.unlink(missing_ok=True)
+
+
+def queue_retry(name: str) -> None:
+    src = qdir("done") / f"{name}.yaml"
+    if not src.exists():
+        raise SystemExit(f"{name} is not in done/")
+    text = src.read_text(encoding="utf-8")
+    if LAB_MARK in text:
+        text = text[:text.index(LAB_MARK)].rstrip("\n") + "\n"
+    (qdir("pending") / src.name).write_text(text, encoding="utf-8")
+    src.unlink()
+    print(f"{name} is pending again (finished repeats of its results directory are kept and skipped)")
+
+
+def cmd_queue(a) -> None:
+    if a.action == "submit":
+        queue_submit(a.names)
+    elif a.action == "status":
+        queue_status()
+    elif a.action == "retry":
+        queue_retry(a.names[0])
+    elif a.detach:   # detached runner: own session, SIGHUP ignored, output in queue/runner.log (the ssh link may drop)
+        QUEUE.mkdir(parents=True, exist_ok=True)
+        cmd = [sys.executable, str(Path(__file__).resolve()), "queue", "run"] + (["--allow-holdout"] if a.allow_holdout else []) \
+            + (["--keep-going"] if a.keep_going else [])
+        with open(QUEUE / "runner.log", "a") as log:
+            pr = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                  start_new_session=True, env=os.environ)
+        print(f"queue runner started, pid {pr.pid}, log {QUEUE / 'runner.log'}")
+    else:
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+        queue_run(a.allow_holdout, a.keep_going)
 
 
 # ------------------------------------------------------------------ frozen sets
@@ -570,7 +782,34 @@ def selftest() -> None:
     print("selftest ok:", "bootstrap detects shift and ignores noise;", "task set reproducible:", list(a)[:3], "...")
 
 
+def _stub_infra(e: dict) -> str:
+    return "stub"
+
+
+def _stub_run(e, arm_name, arm, grading, base, base_url, rep):
+    """LAB_STUB=1: synthetic outcomes, no harness and no model call (tests the queue, resume and report code)."""
+    time.sleep(float(os.environ.get("LAB_STUB_SLEEP", "0")))
+    boost = float((arm.get("env") or {}).get("STUB_BOOST", 0))
+    rows = []
+    for i, (tid, g) in enumerate(grading.items()):
+        rg = random.Random(f"{arm_name}:{rep}:{tid}")
+        p = min(0.95, 0.6 + boost)
+        ok = rg.random() < p
+        answered = not g["unanswerable"]
+        rows.append({"chunk": 0, "attempt": 1, "model": arm.get("model", e["model"]), "task_id": tid, "type": g["task_type"],
+                     "source": g["source"], "check": g["check"], "reward": g["reward"], "unanswerable": g["unanswerable"],
+                     "order": i, "status": "solved", "errors": [], "answered": answered,
+                     "correct": (True if g["unanswerable"] else ok), "fallback": False,
+                     "hybrid_correct": ok, "hybrid_cost": round(100 + 50 * rg.random(), 1), "pure_correct": ok,
+                     "pure_answered": answered, "pure_cost": 100.0, "pipeline_calls": 1, "agent_calls": 0,
+                     "in_tokens": 100, "out_tokens": 50, "seconds": 1.0, "arm": arm_name, "repeat": rep, "infra": False})
+    return rows
+
+
 def main() -> None:
+    if os.environ.get("LAB_STUB"):
+        globals()["run_with_health"] = _stub_run
+        globals()["check_infrastructure"] = _stub_infra
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
@@ -580,12 +819,20 @@ def main() -> None:
     st = sub.add_parser("sets")
     st.add_argument("action", choices=["list", "freeze", "verify"])
     st.add_argument("names", nargs="*")
+    q = sub.add_parser("queue")
+    q.add_argument("action", choices=["submit", "run", "status", "retry"])
+    q.add_argument("names", nargs="*")
+    q.add_argument("--detach", action="store_true")
+    q.add_argument("--keep-going", action="store_true")
+    q.add_argument("--allow-holdout", action="store_true")
     p = sub.add_parser("report")
     p.add_argument("name")
     sub.add_parser("selftest")
     a = ap.parse_args()
     if a.cmd == "run":
         cmd_run(Path(a.experiment), a.dry, a.allow_holdout)
+    elif a.cmd == "queue":
+        cmd_queue(a)
     elif a.cmd == "sets":
         cmd_sets(a.action, a.names)
     elif a.cmd == "report":
