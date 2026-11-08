@@ -41,7 +41,8 @@ fi
 git archive HEAD | ssh "$HOST" "mkdir -p $DEST/harness && tar -x -C $DEST/harness"
 ssh "$HOST" "mkdir -p $DEST/experiments"
 scp -q tools/lab.py "$HOST:harness-lab/lab.py"
-scp -q tools/dispatcher.py "$HOST:harness-lab/dispatcher.py"   # next to the host stream_run.py it imports            # scp paths are relative to the home directory
+scp -q tools/dispatcher.py "$HOST:harness-lab/dispatcher.py"
+scp -q tools/autolab.py "$HOST:harness-lab/autolab.py"   # next to the host stream_run.py it imports            # scp paths are relative to the home directory
 scp -q experiments/*.yaml "$HOST:harness-lab/experiments/"
 ssh "$HOST" "mkdir -p $DEST/experiments/sets $DEST/experiments/queue/pending $DEST/experiments/queue/running $DEST/experiments/queue/done"
 scp -q experiments/sets/*.yaml "$HOST:harness-lab/experiments/sets/"   # frozen sets (never touches queue/ or results/)
