@@ -1,0 +1,13 @@
+# Mixed development set of the reference run `baseline0` (25 tasks per type, 18% unanswerable, rewards 1-5).
+# Parameters are exactly those that were inline in experiments/baseline0.yaml; the hash must stay ebf1bc16da65.
+role: dev
+tasks: {math: 25, search: 25, data_analysis: 25, coding: 25}
+sources: {coding: [humanevalfix, codegen_fix]}
+unanswerable: {coding: 8, search: 10}
+rewards: {low: 1, high: 5, seed: 5}
+seed: 31
+frozen:
+  set_hash: "ebf1bc16da65"
+  n_tasks: 100
+  n_unanswerable: 18
+  by_type: {"coding": 25, "data_analysis": 25, "math": 25, "search": 25}

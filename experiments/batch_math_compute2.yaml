@@ -1,0 +1,15 @@
+name: batch_math_compute2
+hypothesis: >
+  S11 follow-up 2. In batch_math_compute batch 8 hit the 300-per-problem reply limit (2700 tokens) and fell back to single runs, so the cost of batch 8 was inflated. The limit is now 600 per problem for the compute prompt. batch_math showed that with the plain batch prompt accuracy falls from 0.78 (batch 1) to 0.28 (batch 8) while
+  tokens per task fall from 562 to 16: the model prints guessed answers instead of computing (one call lasts about a second).
+  Prompt `compute` asks for a separate step-by-step computation per problem, nothing hard-coded. Same set, same sizes; if
+  accuracy stays close to batch 1 the requests per task drop several times at a modest token saving.
+backend: gateway
+model: qwen3.6-35b-a3b-noreason
+set: math16
+repeats: 2
+fallback: "off"
+arms:
+  b1: {batch_size: 1}
+  b4c: {batch_size: 4, env: {HARNESS_BATCH_PROMPT: compute}}
+  b8c: {batch_size: 8, env: {HARNESS_BATCH_PROMPT: compute}}

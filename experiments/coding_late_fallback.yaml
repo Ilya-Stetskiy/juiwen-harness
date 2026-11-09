@@ -1,0 +1,21 @@
+name: coding_late_fallback
+hypothesis: >
+  Option B. (1) A static detector of contradictory tests removes unanswerable coding tasks before any model call
+  (measured on the dataset: 400/400 unanswerable flagged, 0/1600 answerable flagged). (2) The tool agent runs as a
+  second tier, after the whole queue, highest reward first, only while the remaining budget covers its expected cost.
+  Under a budget that does not fit the agent for every task, this should beat the agent inline and the pipeline alone
+  in reward-weighted points, and spend far fewer tokens on unanswerable tasks. The first arm is the old behaviour.
+backend: gateway
+model: qwen3.6-35b-a3b-noreason
+tasks: {coding: 36}
+sources: {coding: [codegen_fix]}
+repeats: 2
+seed: 17
+budget: 45000
+arms:
+  inline_nodet:
+    env: {HARNESS_FALLBACK: "on", HARNESS_CONTRADICTION: "off"}
+  pipeline_det:
+    env: {HARNESS_FALLBACK: "off", HARNESS_CONTRADICTION: "on"}
+  late_det:
+    env: {HARNESS_FALLBACK: "late", HARNESS_CONTRADICTION: "on"}

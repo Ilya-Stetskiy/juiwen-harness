@@ -1,0 +1,7 @@
+{
+  "system_prompt": "You solve the task in the current directory. Be concise.",
+  "tools": ["bash", "read_file"],
+  "max_iterations": 10,
+  "max_tokens": 1500,
+  "self_verify": false
+}

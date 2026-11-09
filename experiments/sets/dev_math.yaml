@@ -1,0 +1,10 @@
+# Development set, math only: 40 tasks, random rewards 1-5 (these sources have no unanswerable tasks).
+role: dev
+tasks: {math: 40}
+rewards: {low: 1, high: 5, seed: 11}
+seed: 101
+frozen:
+  set_hash: "b47c9524c1e7"
+  n_tasks: 40
+  n_unanswerable: 0
+  by_type: {"math": 40}

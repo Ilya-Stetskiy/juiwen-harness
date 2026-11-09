@@ -1,0 +1,17 @@
+name: baseline0
+hypothesis: >
+  Baseline of the harness as it stands, on a mixed set like the competition one: 100 tasks of the four types (25 each),
+  random rewards 1-5, about 18% unanswerable tasks, budget 100 000, and the harness chooses the model itself
+  (model: auto). Nothing has been run on such a set before; every earlier experiment was one type with 36-48 tasks.
+  Two arms differ only in where the tool agent runs: inline (the old default) or as a late second tier.
+  This run is the reference every later hypothesis is compared with; it also shows how often the budget binds.
+backend: gateway
+model: auto
+set: baseline0   # experiments/sets/baseline0.yaml, frozen, hash ebf1bc16da65
+repeats: 3   # third repeat added 2026-11-09 for the noise floor (S6)
+budget: 100000
+arms:
+  as_is:
+    env: {HARNESS_FALLBACK: "on"}
+  late:
+    env: {HARNESS_FALLBACK: "late"}

@@ -1,0 +1,98 @@
+{
+  "math": [
+    {
+      "name": "v2",
+      "system": "Write a short Python 3 program that computes the answer to the problem step by step from the given numbers (name the intermediate quantities in variables; never hard-code the result) and prints the final numeric answer (an integer if it is an integer). Reply with only the code in one ```python block.",
+      "max_tokens": 700,
+      "retry": true
+    },
+    {
+      "name": "v1",
+      "system": "Write a short Python 3 program that prints the final integer answer to the problem. Reply with only the code in one ```python block.",
+      "max_tokens": 700,
+      "retry": false
+    }
+  ],
+  "data_analysis": [
+    {
+      "name": "bool",
+      "when": {
+        "instruction_regex": "true or false"
+      },
+      "system": "Write a short Python 3 program that reads the table from the current directory (use pandas or csv), checks the statement against the table by explicit computation (look up the rows and compare; never guess or hard-code the result) and prints exactly one word: true or false. Reply with only the code in one ```python block.",
+      "max_tokens": 900,
+      "retry": true
+    },
+    {
+      "name": "dabench",
+      "when": {
+        "check": [
+          "dabench_format"
+        ]
+      },
+      "system": "Write a short Python 3 program that reads the data file(s) from the current directory (use pandas, numpy or scipy), performs every step the task describes and prints the answer in EXACTLY the requested format: one line per requested item, like @name[value], with every requested item present and the rounding the task asks for. Reply with only the code in one ```python block.",
+      "max_tokens": 1400,
+      "retry": true,
+      "multiline": true
+    },
+    {
+      "name": "count",
+      "when": {
+        "check": [
+          "exact_int"
+        ]
+      },
+      "system": "Write a short Python 3 program that reads the data file(s) from the current directory (use pandas or csv) and prints only the final integer. Reply with only the code in one ```python block.",
+      "max_tokens": 800,
+      "retry": true
+    },
+    {
+      "name": "count_q",
+      "when": {
+        "instruction_regex": "\\bhow many\\b|\\bnumber of\\b|\\bcount\\b"
+      },
+      "system": "Write a short Python 3 program that reads the data file(s) from the current directory (use pandas or csv) and prints only the final number, a count. Do not list items. Reply with only the code in one ```python block.",
+      "max_tokens": 800,
+      "retry": true
+    },
+    {
+      "name": "value",
+      "when": {
+        "check": [
+          "exact_str",
+          "exact_set"
+        ]
+      },
+      "system": "Write a short Python 3 program that reads the data file(s) from the current directory (use pandas or csv) and prints only the final answer exactly as it is written in the table (keep units and formatting). Print several items only if the question asks for a list, separated by '|'. Reply with only the code in one ```python block.",
+      "max_tokens": 800,
+      "retry": true
+    },
+    {
+      "name": "v1",
+      "system": "Write a short Python 3 program that reads the data file(s) from the current directory (use pandas or csv) and prints only the final answer. Reply with only the code in one ```python block.",
+      "max_tokens": 800,
+      "retry": false
+    }
+  ],
+  "search": [
+    {
+      "name": "year",
+      "when": {
+        "instruction_regex": "\\b(what|which|in what) year\\b"
+      },
+      "system": "Answer using only the documents. Reply with exactly one line: FINAL: <year>. The answer is only the four-digit year, nothing else. If the documents do not contain the answer, reply exactly: FINAL: UNSOLVABLE",
+      "max_tokens": 400
+    },
+    {
+      "name": "short",
+      "system": "Answer using only the documents. Reply with exactly one line: FINAL: <answer>. The answer is only the value asked for (a name, number, date, place or short phrase) copied from the source, with no explanation and no extra words. If the documents do not contain the answer, reply exactly: FINAL: UNSOLVABLE",
+      "max_tokens": 400
+    },
+    {
+      "name": "v1",
+      "system": "Answer using only the documents. Reply with the bare answer on the last line as 'FINAL: <answer>'. If the documents do not contain the answer, reply 'FINAL: UNSOLVABLE'.",
+      "max_tokens": 300,
+      "final_fallback": true
+    }
+  ]
+}

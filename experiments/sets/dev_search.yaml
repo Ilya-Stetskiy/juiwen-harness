@@ -1,0 +1,11 @@
+# Development set, search only: 40 tasks, 10 unanswerable (squad_v2), random rewards 1-5.
+role: dev
+tasks: {search: 40}
+unanswerable: {search: 10}
+rewards: {low: 1, high: 5, seed: 12}
+seed: 102
+frozen:
+  set_hash: "db8b14884ca4"
+  n_tasks: 40
+  n_unanswerable: 10
+  by_type: {"search": 40}

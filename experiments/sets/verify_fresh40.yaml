@@ -1,0 +1,9 @@
+# S10: same composition, but FRESH: never frozen, disjoint from verify_frozen40 and from every task the token stream used.
+# Refresh it by changing `seed`. The gap between its AUC and the frozen set's AUC is the over-fit of the verifier.
+role: fresh
+tasks: {math: 20, search: 10, data_analysis: 10}
+unanswerable: {search: 3}
+rewards: {low: 1, high: 5, seed: 31}
+seed: 301
+exclude: [verify_frozen40]
+exclude_stream: true

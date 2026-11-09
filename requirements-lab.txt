@@ -1,0 +1,4 @@
+# Extra packages for LAB runs on public datasets only (model-written programs import them: statistics tests, symbolic maths).
+# Not part of the competition image: the organizers' task formats (sales.csv sums, box arithmetic, kb search, mylib.py fixes) do not need them.
+sympy==1.14.0
+scipy==1.18.1

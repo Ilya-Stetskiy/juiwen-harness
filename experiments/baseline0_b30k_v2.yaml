@@ -1,0 +1,17 @@
+id: exp-baseline0-b30k-v2
+name: baseline0_b30k_v2
+author: human
+hypothesis: >
+  Validation of the simulator (S5) where the budget BINDS: the baseline0 run spent only 56-66k of its 100k, so the
+  budget logic was never exercised. The same set and the same harness at budget 30 000, one arm (fallback on,
+  model auto), one repeat. The simulator, fed with the recorded outcomes of baseline0, predicts the points and the
+  spend at 30k; this run is the real value to compare with (see `sim.py replay` / SCRIPTS.md section 5).
+change: repeat of baseline0_b30k after the unfunded-task fix in lab.py (the first one had its budget-skipped tasks re-run); 2 repeats
+backend: gateway
+model: auto
+set: baseline0
+repeats: 2
+budget: 30000
+arms:
+  as_is:
+    env: {HARNESS_FALLBACK: "on"}

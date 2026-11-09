@@ -1,0 +1,13 @@
+name: loop_models
+hypothesis: >
+  S13: how often do replies loop or get cut at max_tokens, per model. The detector only logs (HARNESS_LOOP=log), so the
+  answers are not changed; the report lists loops, truncations, tokens inside flagged calls and how often a flagged task
+  was solved anyway (false alarms).
+backend: gateway
+model: qwen3.6-35b-a3b-noreason
+set: math16
+repeats: 1
+fallback: "off"
+arms:
+  noreason: {model: qwen3.6-35b-a3b-noreason, env: {HARNESS_LOOP: log}}
+  reason: {model: qwen3.6-35b-a3b, env: {HARNESS_LOOP: log}}

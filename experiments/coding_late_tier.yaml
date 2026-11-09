@@ -1,0 +1,24 @@
+name: coding_late_tier
+hypothesis: >
+  Clean test of the second-tier agent. Earlier runs were dominated by sampling noise in the pipeline phase (3 to 7
+  failures per run for the same tasks). Here the pipeline is run at temperature 0, so the pipeline phase should be the
+  same in every arm and the difference in points is the effect of the late tier alone. Rewards are random 1-5 as in the
+  competition, and the budget (50 000) funds only some of the deferred tasks, so the order matters.
+  Questions: (1) does the late tier add points over the pipeline alone (reward order); (2) does highest-reward-first
+  beat first-come-first-served when the budget cannot fund every deferred task.
+backend: gateway
+model: qwen3.6-35b-a3b-noreason
+tasks: {coding: 48}
+sources: {coding: [codegen_fix]}
+rewards: {low: 1, high: 5, seed: 5}
+repeats: 2
+seed: 19
+budget: 50000
+env: {HARNESS_TEMPERATURE: "0", HARNESS_CONTRADICTION: "on"}
+arms:
+  pipeline:
+    env: {HARNESS_FALLBACK: "off"}
+  late_reward:
+    env: {HARNESS_FALLBACK: "late", HARNESS_LATE_ORDER: "reward"}
+  late_fifo:
+    env: {HARNESS_FALLBACK: "late", HARNESS_LATE_ORDER: "fifo"}

@@ -1,0 +1,19 @@
+id: exp-model-noreason-vs-reason
+name: model_noreason_vs_reason
+author: human
+hypothesis: >
+  Model as a variant parameter (S4 check): on 12 math tasks the non-reasoning qwen3.6-35b-a3b-noreason (first arm,
+  the reference) against the reasoning qwen3.6-35b-a3b. Expectation: reasoning costs several times more tokens per
+  task and is more accurate; the report must show both models, tokens and the paired points difference.
+change: no code change; the only difference between arms is `model` of the arm
+backend: gateway
+model: qwen3.6-35b-a3b-noreason
+tasks: {math: 12}
+rewards: {low: 1, high: 5, seed: 21}
+repeats: 1
+seed: 4242
+budget: 1000000000
+fallback: "off"
+arms:
+  noreason: {model: qwen3.6-35b-a3b-noreason}
+  reasoning: {model: qwen3.6-35b-a3b}

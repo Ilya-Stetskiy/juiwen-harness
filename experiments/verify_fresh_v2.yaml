@@ -1,0 +1,15 @@
+name: verify_fresh_v2
+hypothesis: >
+  Second run: the verifier of session answer-verifier (profiles/verifier_model.json, its judge prompt and fitted coefficients) instead of the placeholder of the first run.
+  S10 answer verification on the unseen FRESH set verify_fresh40 (40 tasks: 20 math, 10 search with 3 unanswerable,
+  10 data analysis). One arm runs the judge variant (free signals + one short LLM call); the event `verify` carries both the
+  free probability and the combined one, so the report shows AUC of each. Together with verify_fresh (same composition,
+  unseen tasks) it shows how much the numbers depend on the set having been seen. The loop detector only logs here.
+backend: gateway
+model: qwen3.6-35b-a3b-noreason
+set: verify_fresh40
+repeats: 1
+fallback: "off"
+arms:
+  judge:
+    env: {HARNESS_VERIFY: judge, HARNESS_LOOP: log}

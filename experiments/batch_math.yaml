@@ -1,0 +1,15 @@
+name: batch_math
+hypothesis: >
+  S11: several math tasks in one request (one program prints one line per task) bypass the 60 requests/minute limit and save
+  repeated system prompts. Batch sizes 1, 2, 4, 8 on 16 math tasks; the curve of accuracy and tokens against batch size, and
+  the number of requests per task, show where batching stops paying. Failed lines are re-run alone.
+backend: gateway
+model: qwen3.6-35b-a3b-noreason
+set: math16
+repeats: 2
+fallback: "off"
+arms:
+  b1: {batch_size: 1}
+  b2: {batch_size: 2}
+  b4: {batch_size: 4}
+  b8: {batch_size: 8}

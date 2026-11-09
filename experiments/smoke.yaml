@@ -1,0 +1,14 @@
+name: smoke
+hypothesis: "Stand self-check: two math prompt variants on 8 tasks, 1 repeat. Not meant to show a difference."
+backend: gateway
+model: qwen3.6-35b-a3b-noreason
+tasks: {math: 8}
+repeats: 1
+seed: 4242
+arms:
+  v2:
+    env: {HARNESS_VARIANT_MATH: v2}
+    expect: {math: v2}
+  v1:
+    env: {HARNESS_VARIANT_MATH: v1}
+    expect: {math: v1}

@@ -1,0 +1,19 @@
+name: coding_late_fallback_v2
+hypothesis: >
+  The first run of coding_late_fallback (same 36 tasks, seed 17) showed late_det equal to pipeline_det in points, i.e. the
+  second-tier agent recovered nothing. The suspected cause is a bug in the late phase: a task was discarded as
+  "unfunded" whenever the money was promised to agents that were still running, instead of waiting for them. After the
+  fix the late tier should recover failed answerable tasks (the inline agent recovered 3-4 of 4 in the same set) while
+  still spending nothing on unanswerable ones. Journals are kept this time to check the cause.
+backend: gateway
+model: qwen3.6-35b-a3b-noreason
+tasks: {coding: 36}
+sources: {coding: [codegen_fix]}
+repeats: 2
+seed: 17
+budget: 45000
+arms:
+  pipeline_det:
+    env: {HARNESS_FALLBACK: "off", HARNESS_CONTRADICTION: "on"}
+  late_det:
+    env: {HARNESS_FALLBACK: "late", HARNESS_CONTRADICTION: "on"}

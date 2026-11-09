@@ -1,0 +1,16 @@
+name: data_analysis_auto_vs_v1
+hypothesis: >
+  The prompt registry for data_analysis (bool / dabench / count / count_q / value, chosen per task by check type and
+  instruction wording, with a retry on code errors) beats the original single generic prompt v1 (no retry).
+  Run 2 of the 175-task study suggested the format wording hurt count questions; this checks the current registry.
+backend: gateway
+model: qwen3.6-35b-a3b-noreason
+tasks: {data_analysis: 40}
+repeats: 3
+seed: 11
+arms:
+  v1:
+    env: {HARNESS_VARIANT_DATA_ANALYSIS: v1}
+    expect: {data_analysis: v1}
+  auto:
+    env: {}

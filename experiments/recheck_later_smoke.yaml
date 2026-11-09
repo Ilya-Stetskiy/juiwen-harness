@@ -1,0 +1,17 @@
+name: recheck_later_smoke
+hypothesis: >
+  Check of the code paths added after the recheck_budget run: doubtful tasks go back into the queue (HARNESS_RECHECK_QUEUE=later,
+  ranked by reward x (1 - p) / cost after the main pass), the recheck uses a model of another family with a third opinion
+  on disagreement (HARNESS_RECHECK_MODE=other, HARNESS_DISAGREE=third), requests are limited to 40 per minute
+  (HARNESS_RPM_LIMIT=40). Same set and settings as arm recheck_other of ab_recheck_other_math, which is the reference.
+backend: gateway
+model: auto
+set: verify_frozen40
+repeats: 1
+budget: 100000
+fallback: "on"
+arms:
+  later_other_rpm40:
+    env: {HARNESS_VERIFY: judge, HARNESS_VERIFY_JUDGE_TYPES: "math,data_analysis", HARNESS_VERIFY_ACTION: recheck,
+          HARNESS_VERIFY_ACCEPT: "0.8", HARNESS_RECHECK_MODE: other, HARNESS_DISAGREE: third, HARNESS_RECHECK_QUEUE: later,
+          HARNESS_RPM_LIMIT: "40"}
