@@ -1,0 +1,29 @@
+name: verify_other
+hypothesis: >
+  Verification by agreement with ANOTHER model (verifier levels other / other_judge) catches more wrong answers than the
+  judge alone, especially on search and data_analysis where the judge is weak (verifier session: AUC 0.79-0.82 search,
+  0.86 data_analysis, 0.93 math). The second run costs about one more task run on the covered types. Four arms on the frozen
+  mixed set verify_frozen40 (math 20, search 10, data_analysis 10), two repeats: log_only is the reference (no verifier),
+  judge is the current setting (judge on math/data_analysis), other and other_judge add the second model (qwen3.8-27b-noreason
+  for the qwen3.6 main model, the other family otherwise). Disagreement rule higher_p (no third run), answers always submitted.
+  Measured: AUC and share of wrong answers caught at a fixed false-alarm rate (lab.py verifycmp), verification tokens per
+  answer, points. Acceptance threshold: one sd of points between repeats of an unchanged harness (7.69, S6). It can fail
+  if the second model repeats the first model's systematic mistakes or if the extra tokens outweigh the replaced answers.
+backend: gateway
+model: auto
+set: verify_frozen40
+repeats: 2
+budget: 100000
+fallback: "on"
+arms:
+  log_only:
+    env: {HARNESS_VERIFY: "off"}
+  judge:
+    env: {HARNESS_VERIFY: judge, HARNESS_VERIFY_JUDGE_TYPES: "math,data_analysis", HARNESS_VERIFY_ACTION: recheck,
+          HARNESS_VERIFY_ACCEPT: "0.8", HARNESS_RECHECK_MODE: strong}
+  other:
+    env: {HARNESS_VERIFY: other, HARNESS_VERIFY_ACTION: recheck, HARNESS_VERIFY_ACCEPT: "0.8", HARNESS_DISAGREE: higher_p,
+          HARNESS_RPM_LIMIT: "50"}
+  other_judge:
+    env: {HARNESS_VERIFY: other_judge, HARNESS_VERIFY_JUDGE_TYPES: "math,data_analysis", HARNESS_VERIFY_ACTION: recheck,
+          HARNESS_VERIFY_ACCEPT: "0.8", HARNESS_DISAGREE: higher_p, HARNESS_RPM_LIMIT: "50"}
