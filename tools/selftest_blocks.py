@@ -250,6 +250,38 @@ def test_rpm_and_recheck_helpers():
         assert executor.recheck_queue() == "later"
 
 
+def test_verify_other():
+    from types import SimpleNamespace as NS
+    from harness import judge, pipelines
+    assert judge.other_model_for("qwen3.6-35b-a3b") == "qwen3.8-27b-noreason" and judge.other_model_for("qwen3.8-27b").startswith("qwen3.6")
+    task = NS(task_id="t1", task_type="search", check="exact_str", instruction="q")
+    events = []
+    ledger = NS(task_cost=lambda tid: 0.0)
+    ctx = NS(task=task, model="qwen3.6-35b-a3b-noreason", pred=None, cfg=None, ledger=ledger, extra={},
+             journal=NS(event=lambda *a, **k: events.append((a, k))))
+
+    async def pipe_same(c):
+        return "solved", "Paris."
+
+    async def pipe_diff(c):
+        return "solved", "Rome"
+    old = pipelines.PIPELINES.get("search")
+    try:
+        with Env(HARNESS_VERIFY="other"):
+            pipelines.PIPELINES["search"] = pipe_same
+            r = asyncio.run(judge.verify_answer(ctx, task, "paris"))
+            assert r["agree_other"] is True and r["other_answered"] is True and "other_tokens" in r
+            pipelines.PIPELINES["search"] = pipe_diff
+            ctx.extra.clear()
+            r = asyncio.run(judge.verify_answer(ctx, task, "paris"))
+            assert r["agree_other"] is False and ctx.extra["other_answer"] == "Rome"
+        with Env(HARNESS_VERIFY="other", HARNESS_VERIFY_OTHER_TYPES="math"):
+            r = asyncio.run(judge.verify_answer(ctx, task, "paris"))
+            assert "agree_other" not in r
+    finally:
+        pipelines.PIPELINES["search"] = old
+
+
 def main():
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

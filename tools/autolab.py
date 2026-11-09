@@ -46,7 +46,7 @@ FORBIDDEN = ("Dockerfile", "requirements.txt", "requirements-lab.txt", "tools/de
 ALLOWED_PREFIX = ("harness/", "profiles/", "run_agent.py", "tools/lab.py", "tools/selftest_blocks.py")
 # Allowed values of the enumerated switches (anything else is silently treated as "off" by the harness, so it is refused here).
 SWITCH_VALUES = {
-    "HARNESS_VERIFY": ["off", "free", "judge"], "HARNESS_VERIFY_ACTION": ["log", "retry", "recheck"],
+    "HARNESS_VERIFY": ["off", "free", "judge", "other", "other_judge"], "HARNESS_VERIFY_ACTION": ["log", "retry", "recheck"],
     "HARNESS_RECHECK_MODE": ["strong", "other"], "HARNESS_RECHECK_QUEUE": ["inline", "later"],
     "HARNESS_DISAGREE": ["higher_p", "strong", "third"], "HARNESS_LOOP": ["off", "log", "retry"],
     "HARNESS_CENSOR": ["off", "log", "enforce"], "HARNESS_CENSOR_BASIS": ["fixed", "pred"],
@@ -55,7 +55,7 @@ SWITCH_VALUES = {
     "HARNESS_PREDICTOR": ["placeholder", "flat", "measured"], "HARNESS_PUNSOLV": ["off", "contradiction"],
     "HARNESS_SOLVERS": ["arith", "contradiction", "arith,contradiction"], "HARNESS_SUBMIT_UNSOLVABLE": ["on", "off"],
     "HARNESS_FALLBACK": ["on", "off", "late"], "HARNESS_GUESS_UNSOLVABLE": ["off", "free", "llm"],
-    "HARNESS_VERIFY_JUDGE_TYPES": None, "HARNESS_BATCH_TYPES": None, "HARNESS_RECHECK_TYPES": None,
+    "HARNESS_VERIFY_JUDGE_TYPES": None, "HARNESS_VERIFY_OTHER_TYPES": None, "HARNESS_BATCH_TYPES": None, "HARNESS_RECHECK_TYPES": None,
 }
 MODELS = ["qwen3.6-35b-a3b-noreason", "qwen3.6-35b-a3b", "qwen3.8-27b-noreason", "qwen3.8-27b"]
 SIM_KEYS = ("HARNESS_SORTER", "HARNESS_PREDICTOR", "HARNESS_PUNSOLV", "HARNESS_SOLVERS")

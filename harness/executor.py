@@ -227,6 +227,44 @@ async def recheck_one(task, model_name, pred, cfg, ledger, journal, answer, p, e
     return (a2, v2["p"], True) if take else (answer, p, False)
 
 
+async def resolve_disagree(ctx, task, model_name, pred, cfg, ledger, journal, answer, p):
+    """HARNESS_VERIFY=other already ran the second model (ctx.extra["other_answer"]); no new run for it. Rule HARNESS_DISAGREE:
+    higher_p (default) the answer with the higher verifier p; strong the second answer; third a third opinion by the strong
+    model, majority of three (no majority: the first answer). The answer is always submitted."""
+    import os
+
+    from . import judge
+    from .answers import normalize
+
+    a2 = ctx.extra["other_answer"]
+    norm = lambda a: normalize(task.check, a or "").strip().lower()
+    if norm(a2) == norm(answer):
+        return answer, p
+    rule = os.environ.get("HARNESS_DISAGREE", "higher_p")
+    final, taken = answer, False
+    if rule == "strong":
+        final, taken = a2, True
+    elif rule == "third":
+        from .llm import CallContext
+        from .pipelines import PIPELINES
+        c3 = CallContext(task, recheck_model(model_name), pred, cfg, ledger, journal)
+        c3.extra["recheck"] = True
+        try:
+            res = await PIPELINES[task.task_type](c3)
+            a3 = res[1] if res is not None and res[0] == "solved" else None
+        except Exception:  # noqa: BLE001
+            a3 = None
+        if a3 is not None and norm(a3) == norm(a2):
+            final, taken = a2, True
+    else:
+        v2 = judge.free_verdict(task, a2, dict(ctx.extra, agree_other=False, other_answered=True))
+        if v2 and v2["p"] > p:
+            final, taken = a2, True
+    journal.event("verify_retry", task=task.task_id, action="other", model=ctx.extra.get("other_model"), p_before=p,
+                  p_after=p, same_answer=False, taken=taken, rule=rule)
+    return final, p
+
+
 async def _verify_loop(ctx, pipeline, task, model_name, pred, cfg, ledger, journal, status, answer):
     """Verifier verdict and what follows (HARNESS_VERIFY_ACTION):
        log       only the `verify` event;
@@ -262,7 +300,9 @@ async def _verify_loop(ctx, pipeline, task, model_name, pred, cfg, ledger, journ
                 status, answer, best_p = res2[0], res2[1], v2["p"]
     elif act == "recheck" and judge.verdict(best_p) == "recheck" and task.task_type in {
             t.strip() for t in os.environ.get("HARNESS_RECHECK_TYPES", task.task_type).split(",")}:
-        if recheck_queue() == "later":
+        if ctx.extra.get("other_answer") is not None and recheck_queue() != "later":
+            answer, best_p = await resolve_disagree(ctx, task, model_name, pred, cfg, ledger, journal, answer, best_p)
+        elif recheck_queue() == "later":
             ctx.extra["defer"] = {"p": best_p, "answer": answer, "model": model_name, "extra": dict(ctx.extra)}
             journal.event("recheck_deferred", task=task.task_id, p=best_p, reward=task.reward)
         else:
