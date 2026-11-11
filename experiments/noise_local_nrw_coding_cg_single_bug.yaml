@@ -1,0 +1,16 @@
+name: noise_local_nrw_coding_cg_single_bug
+hypothesis: >
+  PROVISIONAL noise floor of the narrow set nrw_coding_cg_single_bug (Repair a library with one bug (codegen_fix), 30 tasks) on the LOCAL Qwen (llama-server :8011 behind the shim :18444,
+  no gateway tokens): the same unchanged baseline as noise_nrw_coding_cg_single_bug (as_is: model auto, fallback on), 3 repeats, same budget.
+  `model: auto` keeps the harness routing over the four model ids; the shim serves all of them with the one local Qwen3.6-35B-A3B Q4
+  (a -noreason id = thinking off), so the sd is only an APPROXIMATION of the gateway sd (scaled by tools/narrow_noise.py after the
+  gateway check on cheap sets).
+backend: local
+model: auto
+workers: 3
+set: nrw_coding_cg_single_bug
+repeats: 3
+budget: 300000
+arms:
+  as_is:
+    env: {HARNESS_FALLBACK: "on"}

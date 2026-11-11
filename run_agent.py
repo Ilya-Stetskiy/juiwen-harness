@@ -33,15 +33,25 @@ async def _worker(wid: int, sched: Scheduler, cfg: Config, ledger: TokenLedger, 
         if cfg.limits_on and time.time() - t_start > cfg.run_seconds - cfg.max_task_seconds - 60:
             journal.event("time_stop", worker=wid)
             return
+        if state.get("adaptive") is not None:   # HARNESS_RUN_MODE=adaptive: the mode for the next task
+            state["adaptive"].update(ledger.spent())
         nxt = sched.next(ledger.spent())
         if nxt is None:
+            # R-X3 (HARNESS_WORKER_WAIT=on, default off): nothing fits while others are in flight; their reservations are freed
+            # when they finish, so wait instead of leaving for good.
+            if os.environ.get("HARNESS_WORKER_WAIT", "off").strip().lower() == "on":
+                n_left, n_fly = sched.pending()
+                if n_left > 0 and n_fly > 0:
+                    await asyncio.sleep(0.5)
+                    continue
             return
         task, model, pred = nxt
         if await batching.maybe_batch(task, model, pred, sched, cfg, ledger, journal, state, wid):  # HARNESS_BATCH_SIZE>1
             continue
         before = ledger.task_cost(task.task_id)
         journal.event("task_start", task=task.task_id, type=task.task_type, model=model,
-                      est_p50=round(pred.tokens_p50, 1), worker=wid)
+                      est_p50=round(pred.tokens_p50, 1), worker=wid,
+                      mode=os.environ.get("HARNESS_RUN_MODE_EFFECTIVE", ""))   # R-X11: adaptive switches are process-wide; the mode at the start of each task is logged so a task that saw a switch is visible
         status, answer = "error", None
         try:
             coro = run_task(task, model, pred, cfg, ledger, journal)
@@ -71,12 +81,15 @@ async def _worker(wid: int, sched: Scheduler, cfg: Config, ledger: TokenLedger, 
                       total=round(ledger.spent(), 1), reward=task.reward)
 
 
-async def _recheck_worker(queue: list, cfg: Config, ledger: TokenLedger, journal: Journal) -> None:
+async def _recheck_worker(queue: list, cfg: Config, ledger: TokenLedger, journal: Journal, t_start: float) -> None:
     """Second look at doubtful answers, best expected gain first: reward x (1 - p) / expected cost. Runs while the budget
     (stop line 97%) covers twice the expected cost of a recheck."""
     from harness.executor import recheck_one
 
     while queue:
+        if cfg.limits_on and time.time() - t_start > cfg.run_seconds - cfg.max_task_seconds - 60:   # R-X2: the same deadline as the main phase
+            journal.event("time_stop", worker="recheck")
+            return
         task, model, pred, info = queue.pop(0)
         est = 2.0 * max(pred.tokens_p50, 300.0)
         if cfg.budget * 0.97 - ledger.spent() < est:
@@ -84,8 +97,9 @@ async def _recheck_worker(queue: list, cfg: Config, ledger: TokenLedger, journal
             continue
         before = ledger.task_cost(task.task_id)
         try:
-            ans, p, changed = await recheck_one(task, model, pred, cfg, ledger, journal, info["answer"], info["p"], info["extra"])
-        except Exception as exc:  # noqa: BLE001
+            coro = recheck_one(task, model, pred, cfg, ledger, journal, info["answer"], info["p"], info["extra"])
+            ans, p, changed = await (asyncio.wait_for(coro, cfg.max_task_seconds) if cfg.limits_on else coro)
+        except Exception as exc:  # noqa: BLE001 (a timeout too: the answer that is already on disk stays)
             journal.event("task_error", task=task.task_id, error=type(exc).__name__, detail=str(exc)[:200])
             continue
         if changed and ans:
@@ -142,19 +156,48 @@ async def _late_worker(wid: int, queue: list, cfg: Config, ledger: TokenLedger, 
                       total=round(ledger.spent(), 1), reward=task.reward)
 
 
+def _prod_switches() -> dict:
+    """The switches that decide the behaviour of a run (journal `run_start`): limits, sandbox, mode, predictor, tokenizer."""
+    keys = ("HARNESS_LIMITS", "HARNESS_SANDBOX", "HARNESS_RUN_MODE", "HARNESS_PREDICTOR", "HARNESS_TOKENIZER",
+            "HARNESS_VERIFY", "HARNESS_SORTER", "HARNESS_BATCH_SIZE", "HARNESS_FALLBACK", "HARNESS_HARD_CAP")
+    return {k.replace("HARNESS_", "").lower(): os.environ.get(k, "") for k in keys}
+
+
 async def amain(tasks_dir: str) -> None:
     cfg = Config.from_env()
     journal = Journal(cfg.log_dir)
     ledger = TokenLedger()
     t_start = time.time()
     tasks = load_tasks(tasks_dir)
+    from harness import mode as run_mode
+    try:
+        mrec = run_mode.apply(tasks, float(cfg.budget))   # HARNESS_RUN_MODE=legacy (default: nothing) | accuracy | economy | auto
+    except Exception as exc:  # noqa: BLE001 - a broken profile must not leave the run without a single answer: go on as legacy
+        traceback.print_exc(file=sys.stderr)
+        mrec = {"requested": os.environ.get("HARNESS_RUN_MODE", ""), "mode": "legacy", "applied": {}, "overridden": []}
+        journal.event("config_error", what="run mode failed, running as legacy", error=type(exc).__name__, detail=str(exc)[:200])
     journal.event("run_start", n_tasks=len(tasks), budget=cfg.budget, workers=cfg.workers,
-                  limits_on=cfg.limits_on, force_model=cfg.force_model)
+                  limits_on=cfg.limits_on, force_model=cfg.force_model, run_mode=mrec["mode"], run_mode_requested=mrec["requested"],
+                  mode_auto=mrec.get("auto"), mode_applied=mrec["applied"], mode_overridden=mrec["overridden"],
+                  prod=_prod_switches())   # R-K1: what really runs (a legacy/off line in a boevoi run is a mistake of the launch)
+    if not cfg.api_base:
+        journal.event("config_warning", what="LLM_BASE_URL is empty: every model call will fail")   # R-X12
+        print("[harness] WARNING: LLM_BASE_URL is empty", file=sys.stderr)
+    if tasks and all(t.reward == 1.0 for t in tasks):
+        journal.event("config_warning", what="all rewards are 1.0: the reward field is missing or has another name?")   # R-X8
+        print("[harness] WARNING: all task rewards are 1.0", file=sys.stderr)
+    if mrec["requested"] != "legacy":
+        print(f"[harness] run mode {mrec['requested']} -> {mrec['mode']} {mrec.get('auto') or ''}", file=sys.stderr)
 
     rest = []
     n_det = 0
     for t in tasks:
-        det = dispatch(t)
+        try:
+            det = dispatch(t)
+        except Exception as exc:  # noqa: BLE001 - a solver bug costs one task, not the run
+            journal.event("solver_error", task=t.task_id, error=type(exc).__name__, detail=str(exc)[:200])
+            rest.append(t)
+            continue
         if det.kind == "unsolvable":   # deterministic verdict: no tokens are spent on the task (a guess may follow)
             journal.event("solver_unsolvable", task=t.task_id, solver=det.solver, reward=t.reward)
             g = await guess.guess(t, MODELS[0], None, cfg, ledger, journal) if guess.mode() != "off" else None
@@ -172,16 +215,69 @@ async def amain(tasks_dir: str) -> None:
                 pass
         rest.append(t)
 
+    from harness import executor
+    executor.EARLY_ANSWER = lambda t, a: write_answer(t.dir, guard.scrub_answer(a, t.task_id, journal))
     models = [cfg.force_model] if cfg.force_model else list(MODELS)
-    sched = make_scheduler(rest, models, make_predictor(), float(cfg.budget))
+    try:
+        sched = make_scheduler(rest, models, make_predictor(), float(cfg.budget))
+    except Exception as exc:  # noqa: BLE001 - a broken predictor (model file, switch): the placeholder predictor still plans the run
+        traceback.print_exc(file=sys.stderr)
+        journal.event("config_error", what="predictor failed, using the placeholder", error=type(exc).__name__, detail=str(exc)[:200])
+        from harness.predictor import Predictor
+        from harness.sorter import Scheduler
+        sched = Scheduler(rest, models, Predictor(), float(cfg.budget))
     state = {"solved": 0, "deferred": [], "running": {}, "recheck": []}
+    from harness import adaptive
+    state["adaptive"] = adaptive.make(sched, float(cfg.budget), journal, mrec)
+    phases = asyncio.ensure_future(_run_phases(sched, cfg, ledger, journal, t_start, state))
+    _arm_hard_cap(ledger, cfg, journal, phases)
+    try:
+        await phases
+    except asyncio.CancelledError:
+        if not ledger.capped:
+            raise
+        # the hard cap cancelled every worker; the answers written so far stay (they are written before verification)
+        journal.event("hard_cap_stop", spent=round(ledger.spent(), 1), cap=round(ledger.cap or 0.0, 1),
+                      budget=cfg.budget, seconds=round(time.time() - t_start, 1))
+    journal.event("run_end", solved_llm=state["solved"], solved_det=n_det, spent=round(ledger.spent(), 1),
+                  calls=ledger.calls, skipped=sched.skipped, correction=sched.correction(),
+                  seconds=round(time.time() - t_start, 1), hard_cap=ledger.capped)
+    journal.close()
+
+
+def _arm_hard_cap(ledger: TokenLedger, cfg: Config, journal: Journal, phases: "asyncio.Future") -> None:
+    """HARNESS_HARD_CAP=on|off (default off): as soon as the cost reported by the API reaches HARNESS_HARD_CAP_LINE (default 1.0)
+    x budget, nothing new starts (llm._ask_once raises BudgetStop) and every worker in flight is cancelled. The organizers only
+    truncate the output on an overrun, so what is spent after the budget buys nothing."""
+    if os.environ.get("HARNESS_HARD_CAP", "off").strip().lower() != "on":
+        return
+    try:
+        line = float(os.environ.get("HARNESS_HARD_CAP_LINE", "1.0") or 1.0)
+    except ValueError:
+        line = 1.0
+    loop = asyncio.get_running_loop()
+    ledger.cap = float(cfg.budget) * line
+    try:   # near the cap the calls run one at a time, so the clamp of max_tokens is exact (0 = never)
+        serial = float(os.environ.get("HARNESS_HARD_CAP_SERIAL", "0.98") or 0.0)
+    except ValueError:
+        serial = 0.98
+    ledger.serial_at = ledger.cap * serial if serial > 0 else None
+
+    def on_cap(spent: float) -> None:
+        journal.event("hard_cap_hit", spent=round(spent, 1), cap=round(ledger.cap or 0.0, 1), budget=cfg.budget)
+        loop.call_soon_threadsafe(phases.cancel)
+
+    ledger.on_cap = on_cap
+
+
+async def _run_phases(sched, cfg: Config, ledger: TokenLedger, journal: Journal, t_start: float, state: dict) -> None:
     await asyncio.gather(*[
         _worker(i, sched, cfg, ledger, journal, t_start, state) for i in range(cfg.workers)
     ])
     if state["recheck"]:
         queue = sorted(state["recheck"], key=lambda x: -x[0].reward * (1.0 - x[3]["p"]) / max(x[2].tokens_p50, 100.0))
         journal.event("recheck_phase", n=len(queue), spent=round(ledger.spent(), 1), budget=cfg.budget)
-        await asyncio.gather(*[_recheck_worker(queue, cfg, ledger, journal) for _ in range(cfg.workers)])
+        await asyncio.gather(*[_recheck_worker(queue, cfg, ledger, journal, t_start) for _ in range(cfg.workers)])
     if state["deferred"]:
         queue = list(state["deferred"])  # HARNESS_LATE_ORDER=fifo keeps the order in which the pipeline gave up
         if os.environ.get("HARNESS_LATE_ORDER", "reward").lower() != "fifo":
@@ -190,10 +286,6 @@ async def amain(tasks_dir: str) -> None:
         await asyncio.gather(*[
             _late_worker(i, queue, cfg, ledger, journal, t_start, state) for i in range(cfg.workers)
         ])
-    journal.event("run_end", solved_llm=state["solved"], solved_det=n_det, spent=round(ledger.spent(), 1),
-                  calls=ledger.calls, skipped=sched.skipped, correction=sched.correction(),
-                  seconds=round(time.time() - t_start, 1))
-    journal.close()
 
 
 def main() -> None:

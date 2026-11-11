@@ -1,0 +1,17 @@
+id: exp-mode-hard-30k
+name: mode_hard_30k
+author: human
+hypothesis: >
+  Price of the hard budget limit: economy with HARNESS_BUDGET_HARD=on against off at 30 000 on baseline0, three repeats. Economy overspent up to 189 percent of the budget with HARD=off; on cuts calls at the budget. Reads: points and spend/budget, i.e. overspend against lost points.
+change: HARNESS_BUDGET_HARD=on|off in economy
+backend: gateway
+model: auto
+set: baseline0
+repeats: 3
+budget: 30000
+fallback: "on"
+arms:
+  economy_off:
+    env: {HARNESS_RUN_MODE: economy, HARNESS_BUDGET_HARD: "off"}
+  economy_on:
+    env: {HARNESS_RUN_MODE: economy, HARNESS_BUDGET_HARD: "on"}

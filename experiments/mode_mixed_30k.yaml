@@ -1,0 +1,17 @@
+id: exp-mode-mixed-30k
+name: mode_mixed_30k
+author: human
+hypothesis: >
+  Economy against legacy on a second set (mixed100_dev) at 30 000, three repeats: does the baseline0 result (+21.0 at 30k) transfer.
+change: HARNESS_RUN_MODE=legacy|economy
+backend: gateway
+model: auto
+set: mixed100_dev
+repeats: 3
+budget: 30000
+fallback: "on"
+arms:
+  legacy:
+    env: {HARNESS_RUN_MODE: legacy}
+  economy:
+    env: {HARNESS_RUN_MODE: economy}

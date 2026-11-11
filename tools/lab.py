@@ -33,6 +33,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import shutil
 import signal
 import statistics
@@ -52,7 +53,7 @@ RESULTS = EXP_DIR / "results"
 SETS_DIR = EXP_DIR / "sets"
 QUEUE = EXP_DIR / "queue"
 WORK = Path(os.environ.get("LAB_WORK") or "/tmp/hl_lab")
-SET_KEYS = ("tasks", "sources", "unanswerable", "rewards", "seed", "exclude", "exclude_stream", "adversarial")
+SET_KEYS = ("tasks", "sources", "unanswerable", "rewards", "seed", "exclude", "exclude_stream", "adversarial", "select", "exclude_ids_file")
 sr.TAG = "_lab"          # state and log files of the shared sampler must not collide with the stream
 
 
@@ -159,6 +160,24 @@ def build_adversarial(e: dict, out: Path) -> dict:
     return grading
 
 
+def row_matches(r: dict, conds: dict | None) -> bool:
+    """`select: {type: {field: cond}}` of a narrow set: field is a dotted path into the unified row (`meta.type`, `check`, `instruction`);
+    cond is a list of allowed values (compared as strings) or {re: pattern} / {not_re: pattern} (regex search in the field's text)."""
+    for field, cond in (conds or {}).items():
+        v = r
+        for part in field.split("."):
+            v = v.get(part) if isinstance(v, dict) else None
+        if isinstance(cond, dict):
+            text = "" if v is None else str(v)
+            if "re" in cond and not re.search(cond["re"], text, re.I):
+                return False
+            if "not_re" in cond and re.search(cond["not_re"], text, re.I):
+                return False
+        elif v is None or str(v) not in {str(c) for c in cond}:
+            return False
+    return True
+
+
 def build_task_set(e: dict, out: Path) -> dict:
     """Fixed task set for the whole experiment: `tasks: {math: 30, search: 10}` drawn without repetition."""
     shutil.rmtree(out, ignore_errors=True)
@@ -172,14 +191,17 @@ def build_task_set(e: dict, out: Path) -> dict:
         skip_ids |= set(build_named_set(other)[1])
     if e.get("exclude_stream"):
         skip_ids |= stream_ids()
+    if e.get("exclude_ids_file"):   # frozen list of task ids (one per line, path relative to the experiments folder), e.g. the cost-model training tasks
+        skip_ids |= {x.strip() for x in open(EXP_DIR / e["exclude_ids_file"], encoding="utf-8") if x.strip()}
     for t, n in e["tasks"].items():
+        conds = (e.get("select") or {}).get(t)
         got, n_un, guard = 0, 0, 0
         pool = e.get("sources", {}).get(t) or sr.SOURCES[t]
         quota = (e.get("unanswerable") or {}).get(t)   # exact number of unanswerable tasks of this type, if given
-        while got < n and guard < n * 300:
+        while got < n and guard < n * (3000 if conds else 300):
             guard += 1
             r = sm.next_row(sm.rng.choice(pool))
-            if r is None or r["task_id"] in grading or r["task_id"] in skip_ids:
+            if r is None or r["task_id"] in grading or r["task_id"] in skip_ids or not row_matches(r, conds):
                 continue
             is_un = r["check"] == "unanswerable"
             if quota is not None and ((is_un and n_un >= quota) or (not is_un and got - n_un >= n - quota)):
@@ -363,11 +385,12 @@ def run_with_health(e: dict, arm_name: str, arm: dict, grading: dict, base: Path
 
 
 # ------------------------------------------------------------------ report
-def bootstrap_ci(diffs: list[float], n: int = 4000, seed: int = 7) -> tuple[float, float]:
+def bootstrap_ci(diffs: list[float], n: int = 4000, seed: int = 7, alpha: float = 0.05) -> tuple[float, float]:
+    """Percentile bootstrap interval of the mean; alpha 0.05 = 95 % (review R-K5: the verdict passes alpha / number of comparisons)."""
     rng = random.Random(seed)
     m = len(diffs)
     means = sorted(sum(diffs[rng.randrange(m)] for _ in range(m)) / m for _ in range(n))
-    return means[int(0.025 * n)], means[int(0.975 * n) - 1]
+    return means[min(int(alpha / 2 * n), n - 1)], means[max(int((1 - alpha / 2) * n) - 1, 0)]
 
 
 def group_labels(cells: list[dict]) -> list[str]:
@@ -685,6 +708,22 @@ def make_report(name: str) -> str:
     good = [c for c in cells if not c["infra"]]
     infra = len(cells) - len(good)
     lines.append(f"Cells: {len(cells)}; infrastructure-broken (excluded from scoring): {infra}.")
+    if arms:   # per-mode metrics: accuracy = points per run at the full budget; economy = points per 1k tokens, tokens to the first arm's points
+        lines += ["", "## Mode metrics", "",
+                  "Accuracy mode reads *points per run* (budget as set). Economy mode reads *points per 1k tokens* and *tokens to the first "
+                  "arm's points* (cells walked in start order; `-` = not reached).", "",
+                  "| arm | points per run | tokens per run | points per 1k tokens | tokens to first arm's points |", "|---|---|---|---|---|"]
+        base_pts = None
+        for a in arms:
+            sel = [c for c in good if c["arm"] == a]
+            reps = sorted({c["repeat"] for c in sel})
+            if not reps:
+                continue
+            pts = sum(c["reward"] * c["correct"] for c in sel) / len(reps)
+            tk = sum(c["hybrid_cost"] for c in sel) / len(reps)
+            base_pts = pts if base_pts is None else base_pts
+            tt = tokens_to_points(good, a, base_pts)
+            lines.append(f"| {a} | {pts:.1f} | {tk:.0f} | {1000 * pts / max(1.0, tk):.3f} | {tt if tt is not None else '-'} |")
     lines += ["", "## Accuracy and cost per arm", "",
               "| arm | type | cells | accuracy | points per run | sd between repeats | tokens/task | tokens per correct |",
               "|---|---|---|---|---|---|---|---|"]
@@ -778,6 +817,25 @@ def cmd_run(path: Path, dry: bool, allow_holdout: bool = False) -> None:
         sys.exit(2)
 
 
+BUDGET_PER_TASK = 1000.0   # the contest: 100 000 tokens for 100 tasks; a smaller set gets a proportionally smaller budget
+
+
+def resolve_budget(e: dict, n_tasks: int) -> None:
+    """`budget: auto` (or `budget_per_task: N`) = N x tasks in the set (default 1000 per task, as in the contest). An explicit number that is
+    more than 20% away from 1000 per task gets a warning: the verdicts at a budget of another scale do not transfer to the contest."""
+    b = e.get("budget")
+    per = float(e.get("budget_per_task") or BUDGET_PER_TASK)
+    if (isinstance(b, str) and b.strip().lower() == "auto") or e.get("budget_per_task"):
+        e["budget"] = int(round(per * n_tasks))
+        say(f"budget: {per:.0f} per task x {n_tasks} tasks = {e['budget']}")
+    elif isinstance(b, (int, float)) and b < 10 ** 8 and n_tasks:
+        ratio = b / (BUDGET_PER_TASK * n_tasks)
+        if abs(ratio - 1.0) > 0.2:
+            say(f"WARNING: budget {b:.0f} is {b / n_tasks:.0f} per task ({n_tasks} tasks), the contest gives {BUDGET_PER_TASK:.0f}; "
+                f"use `budget: auto`")
+    e["budget_per_task_effective"] = (e["budget"] / n_tasks) if n_tasks and e["budget"] < 10 ** 8 else None
+
+
 def run_experiment(path: Path, dry: bool, allow_holdout: bool = False) -> tuple[str, str]:
     """Run (or resume) one experiment file. Returns (status, reason): status is ok / dry / aborted."""
     e = load_experiment(path, allow_holdout)
@@ -786,6 +844,7 @@ def run_experiment(path: Path, dry: bool, allow_holdout: bool = False) -> tuple[
     d.mkdir(parents=True, exist_ok=True)
     base = WORK / name / "set"
     grading = build_task_set(e, base)
+    resolve_budget(e, len(grading))
     frozen = e.get("set_frozen")
     if e.get("set_role") == "fresh":
         frozen = None
@@ -796,7 +855,7 @@ def run_experiment(path: Path, dry: bool, allow_holdout: bool = False) -> tuple[
                     hypothesis=e["hypothesis"], model=e["model"], backend=e["backend"],
                     fallback=e["fallback"], tasks=e["tasks"], n_tasks=len(grading), repeats=e["repeats"], seed=e["seed"],
                     arms=e["arms"], task_ids=list(grading), started=time.strftime("%Y-%m-%d %H:%M:%S"),
-                    code_version=code_version(e), budget=e["budget"], env=e.get("env"),
+                    code_version=code_version(e), budget=e["budget"], budget_per_task=e.get("budget_per_task_effective"), env=e.get("env"),
                     set_name=e.get("set"), set_role=e.get("set_role", "adhoc"), set_hash=set_hash(grading),
                     n_unanswerable=sum(bool(g["unanswerable"]) for g in grading.values()))
     (d / "manifest.json").write_text(json.dumps(manifest, indent=1, ensure_ascii=False), encoding="utf-8")
@@ -867,6 +926,50 @@ def noise_floor(name: str = NOISE_RUN) -> dict | None:
             "mean_points": round(statistics.fmean(means), 1), "threshold_points": round(statistics.fmean(sds), 2)}
 
 
+MIN_THRESHOLD_POINTS = 2.0   # a threshold below this (sd 0 of 3 lucky repeats) is not a threshold
+
+
+BINDING_BUDGET_MAX = 45000     # budgets up to this are "binding" for a 100-task set (baseline0 spends ~64k)
+BINDING_SD_POINTS = 10.0       # observed sd between repeats at a binding budget: 11.6 (legacy) / 5.7 (economy) on mixed100_dev 30k, review R-K4
+
+
+def threshold_for(set_name: str | None, repeats: int, budget: float | None = None) -> tuple[float, str]:
+    """Acceptance threshold in points per run for a set and a number of repeats (review R-K4, R-L1).
+    The sd between repeats comes from the set's OWN measurement when there is one (narrow sets: experiments/sets/narrow/noise_floor.json),
+    else from the reference experiment (baseline0, 100 tasks). The difference of two means of r repeats has sd*sqrt(2/r), so the
+    threshold is sd * max(1, sqrt(2/r)): never below one sd, 1.41 sd at a single repeat. A floor of MIN_THRESHOLD_POINTS applies."""
+    sd, src = None, f"{NOISE_RUN} (100 tasks)"
+    if set_name and set_name.startswith("nrw_"):
+        f = SETS_DIR / "narrow" / "noise_floor.json"
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            ent = (data.get("sets") or data).get(set_name) or {}
+            if ent.get("threshold_points"):
+                sd, src = float(ent["threshold_points"]), f"{set_name} noise ({ent.get('status')})"
+        except (OSError, ValueError, AttributeError):
+            pass
+    if sd is None:
+        sd = float((noise_floor() or {}).get("threshold_points", 0.0))
+    if budget and budget <= BINDING_BUDGET_MAX and not (set_name or "").startswith("nrw_") and sd < BINDING_SD_POINTS:
+        sd, src = BINDING_SD_POINTS, src + f"; raised to {BINDING_SD_POINTS} for a binding budget ({budget:.0f})"
+    thr = sd * max(1.0, (2.0 / max(1, repeats)) ** 0.5)
+    return round(max(thr, MIN_THRESHOLD_POINTS), 2), src
+
+
+def in_budget_points(good: list, arm: str, budget: float) -> float:
+    """Points per run of the tasks that fit into the budget: cells in the order the tasks were started, cumulative cost
+    including the task itself <= budget (what is past the budget is cut off by the organizers; review R-K2). Mean over repeats."""
+    vals = []
+    for r in sorted({c["repeat"] for c in good if c["arm"] == arm}):
+        pts = tok = 0.0
+        for c in sorted((c for c in good if c["arm"] == arm and c["repeat"] == r), key=lambda c: c.get("order", 0)):
+            tok += c["hybrid_cost"]
+            if tok <= budget:
+                pts += c["reward"] * c["correct"]
+        vals.append(pts)
+    return round(sum(vals) / len(vals), 2) if vals else 0.0
+
+
 def ape_table(d: Path, good: list[dict], meta: dict) -> list[str]:
     """Predictor error: |predicted p50 - actual cost| / actual cost per task, median per type and arm (events task_start/task_end)."""
     rows = []
@@ -892,6 +995,25 @@ def ape_table(d: Path, good: list[dict], meta: dict) -> list[str]:
             "| arm | type | tasks | median APE | mean APE |", "|---|---|---|---|---|"] + rows
 
 
+def tokens_to_points(good: list, arm: str, target: float):
+    """Economy metric: tokens (mean over repeats) after which the cumulative points of the arm reach `target` (the first arm's
+    points per run), walking the cells in the order the tasks were started. None if some repeat never reaches it."""
+    vals = []
+    for r in sorted({c["repeat"] for c in good if c["arm"] == arm}):
+        pts = tok = 0.0
+        hit = None
+        for c in sorted((c for c in good if c["arm"] == arm and c["repeat"] == r), key=lambda c: c.get("order", 0)):
+            pts += c["reward"] * c["correct"]
+            tok += c["hybrid_cost"]
+            if pts >= target:
+                hit = tok
+                break
+        if hit is None:
+            return None
+        vals.append(hit)
+    return round(sum(vals) / len(vals)) if vals else None
+
+
 def summarize(name: str) -> dict:
     """Numbers that go into the experiment file: points per run by arm and the paired points difference with its CI.
     `verdict` is the lab's mechanical reading (accept / reject / clarify per arm against the first arm); the
@@ -914,30 +1036,66 @@ def summarize(name: str) -> dict:
                           "points_per_run": round(sum(pts) / len(pts), 2), "tokens_per_run": round(sum(toks) / len(toks)),
                           "accuracy": round(sum(c["correct"] for c in sel) / len(sel), 4),
                           "infra_broken_cells": sum(c["infra"] for c in cells if c["arm"] == a)}
+        # mode metrics: accuracy mode reads points_per_run at the full budget; economy mode reads these two
+        out["arms"][a]["points_per_1k_tokens"] = round(1000 * sum(pts) / max(1.0, sum(toks)), 3)
+        if meta.get("budget") and meta["budget"] < 10 ** 8:
+            out["arms"][a]["points_in_budget"] = in_budget_points(good, a, float(meta["budget"]))   # R-K2
+    if arms and arms[0] in out["arms"]:
+        target = out["arms"][arms[0]]["points_per_run"]
+        for a in out["arms"]:
+            out["arms"][a]["tokens_to_baseline_points"] = tokens_to_points(good, a, target)
+    budget = float(meta["budget"]) if meta.get("budget") and meta["budget"] < 10 ** 8 else None
+    out["budget"] = budget
+    out["binding"] = bool(budget and any(v["tokens_per_run"] > 0.9 * budget for v in out["arms"].values()))
+    set_name = meta.get("set_name")
     verdict: dict[str, str] = {}
+    verdict_in: dict[str, str] = {}
     if len(arms) > 1 and arms[0] in out["arms"]:
-        def per_task(a):
+        def per_task(a, within=None):
+            """Mean points per task over repeats; `within`: only the tasks that fit into the budget (start order, cumulative cost)."""
             acc = collections.defaultdict(list)
-            for c in good:
-                if c["arm"] == a:
-                    acc[c["task_id"]].append(c["reward"] * c["correct"])
+            for r in sorted({c["repeat"] for c in good if c["arm"] == a}):
+                tok = 0.0
+                for c in sorted((c for c in good if c["arm"] == a and c["repeat"] == r), key=lambda c: c.get("order", 0)):
+                    tok += c["hybrid_cost"]
+                    keep = within is None or tok <= within
+                    acc[c["task_id"]].append(c["reward"] * c["correct"] if keep else 0.0)
             return {k: sum(v) / len(v) for k, v in acc.items()}
-        base = per_task(arms[0])
-        for a in arms[1:]:
-            x = per_task(a)
+
+        def judge(a, within):
+            base = per_task(arms[0], within)
+            x = per_task(a, within)
             ids = sorted(set(x) & set(base))
             if len(ids) < 5:
-                verdict[a] = "clarify"
-                continue
+                return "clarify", None
             diffs = [x[i] - base[i] for i in ids]
-            lo, hi = bootstrap_ci(diffs)
+            m_cmp = max(1, len(arms) - 1)   # R-K5: Bonferroni over the arms compared with the first one (alpha 0.05 / m)
+            lo, hi = bootstrap_ci(diffs, alpha=0.05 / m_cmp)
             n = len(ids)
-            out["arms"][a]["points_diff_vs_first"] = {"mean": round(sum(diffs), 2), "ci95": [round(lo * n, 2), round(hi * n, 2)]}
-            thr = (noise_floor() or {}).get("threshold_points", 0.0)
-            out["arms"][a]["points_diff_vs_first"]["threshold"] = thr
-            verdict[a] = ("accept" if lo > 0 and sum(diffs) >= thr else "clarify" if lo > 0 else "reject" if hi < 0 else "clarify")
+            thr, src = threshold_for(set_name, out["arms"][a]["runs"], budget)
+            rec = {"mean": round(sum(diffs), 2), "ci95": [round(lo * n, 2), round(hi * n, 2)], "threshold": thr, "threshold_source": src,
+                   "comparisons": m_cmp}
+            v = ("accept" if lo > 0 and sum(diffs) >= thr else "clarify" if lo > 0 else "reject" if hi < 0 else "clarify")
+            return v, rec
+
+        for a in arms[1:]:
+            verdict[a], rec = judge(a, None)
+            if rec:
+                out["arms"][a]["points_diff_vs_first"] = rec
+            if budget:   # R-K2: the same reading restricted to what fits into the budget
+                verdict_in[a], rec_in = judge(a, budget)
+                if rec_in:
+                    out["arms"][a]["points_diff_in_budget"] = rec_in
     else:
         verdict = {arms[0]: "baseline"}
+    out["verdict_total"] = dict(verdict)
+    out["verdict_in_budget"] = verdict_in
+    if out["binding"] and verdict_in:   # a binding budget: the in-budget reading is the one that counts (R-K2)
+        verdict = {a: verdict_in.get(a, v) for a, v in verdict.items()}
+        for a, v in out["arms"].items():   # the displayed difference must be the one the verdict is based on (autolab and status read points_diff_vs_first)
+            if a in verdict_in and v.get("points_diff_in_budget"):
+                v["points_diff_total"] = v.get("points_diff_vs_first")
+                v["points_diff_vs_first"] = v["points_diff_in_budget"]
     out["verdict"] = verdict
     return out
 
@@ -1003,6 +1161,20 @@ def queue_status() -> None:
         print("runner: not running")
 
 
+def queue_order(files: list[Path]) -> list[Path]:
+    """Pending experiments in the order they run: the optional `priority:` of the experiment (default 0, higher first), then by name.
+    The autolab gives a hypothesis proposed by a human a high priority so that it goes first; nothing else about the queue changes."""
+    import yaml
+
+    def prio(f: Path) -> float:
+        try:
+            top = f.read_text(encoding="utf-8").split(LAB_MARK)[0]
+            return -float((yaml.safe_load(top) or {}).get("priority", 0) or 0)
+        except Exception:   # noqa: BLE001 - an unreadable file keeps its alphabetical place
+            return 0.0
+    return sorted(files, key=lambda f: (prio(f), f.name))
+
+
 def queue_run(allow_holdout: bool, keep_going: bool) -> None:
     lock = QUEUE / "runner.pid"
     QUEUE.mkdir(parents=True, exist_ok=True)
@@ -1019,7 +1191,7 @@ def queue_run(allow_holdout: bool, keep_going: bool) -> None:
             if (QUEUE / "STOP").exists():
                 say("STOP file present: leaving the queue")
                 break
-            todo = sorted(qdir("running").glob("*.yaml")) or sorted(qdir("pending").glob("*.yaml"))
+            todo = sorted(qdir("running").glob("*.yaml")) or queue_order(list(qdir("pending").glob("*.yaml")))
             if not todo:
                 say("queue is empty")
                 break
@@ -1068,6 +1240,24 @@ def queue_retry(name: str) -> None:
     print(f"{name} is pending again (finished repeats of its results directory are kept and skipped)")
 
 
+def refuse_if_swarm_agent(what: str) -> None:
+    """The swarm's chat agent may describe an experiment and put it in the queue (`queue submit`), but not run one: the dispatcher runs the
+    queue within the gateway limits. A command started from the agent server's process tree (its bash tool) is refused here."""
+    pid, hops = os.getppid(), 0
+    while pid > 1 and hops < 40:
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                cmdline = f.read().replace(b"\0", b" ").decode("utf-8", "replace")
+            with open(f"/proc/{pid}/stat") as f:
+                nxt = int(f.read().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            return   # no /proc (not Linux) or a vanished parent: nothing to check
+        if "jiuwenswarm.server" in cmdline or "jiuwenswarm-start" in cmdline or "jiuwenswarm.app" in cmdline:
+            sys.exit(f"REFUSED: {what} may not be started from the swarm agent. Put the experiment in the queue with `lab.py queue submit <name>` "
+                     "and stop: the dispatcher runs it and the verdict is sent to the chat by itself. Do not wait for it with sleep loops.")
+        pid, hops = nxt, hops + 1
+
+
 def cmd_queue(a) -> None:
     if a.action == "submit":
         queue_submit(a.names)
@@ -1075,7 +1265,7 @@ def cmd_queue(a) -> None:
         queue_status()
     elif a.action == "retry":
         queue_retry(a.names[0])
-    elif a.detach:   # detached runner: own session, SIGHUP ignored, output in queue/runner.log (the ssh link may drop)
+    elif (refuse_if_swarm_agent("`queue run`") or a.detach):   # detached runner: own session, SIGHUP ignored, output in queue/runner.log (the ssh link may drop)
         QUEUE.mkdir(parents=True, exist_ok=True)
         cmd = [sys.executable, str(Path(__file__).resolve()), "queue", "run"] + (["--allow-holdout"] if a.allow_holdout else []) \
             + (["--keep-going"] if a.keep_going else [])
@@ -1237,6 +1427,7 @@ def main() -> None:
     sub.add_parser("selftest")
     a = ap.parse_args()
     if a.cmd == "run":
+        refuse_if_swarm_agent("`run`")
         cmd_run(Path(a.experiment), a.dry, a.allow_holdout)
     elif a.cmd == "noisefloor":
         cmd_noisefloor()

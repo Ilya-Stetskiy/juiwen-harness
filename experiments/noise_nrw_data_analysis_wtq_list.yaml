@@ -1,0 +1,14 @@
+name: noise_nrw_data_analysis_wtq_list
+hypothesis: >
+  Noise floor of the narrow set nrw_data_analysis_wtq_list (Table questions with a list answer (WikiTableQuestions, exact_set), 24 tasks): the unchanged baseline harness (the as_is arm of baseline0:
+  model auto, fallback on) is run 3 times, so the standard deviation of points between
+  repeats of an unchanged harness is known for this set. A difference below it is never accepted on this set.
+  Budget 100000 does not bind (estimated tokens per run are far below it), so there is no truncation.
+backend: gateway
+model: auto
+set: nrw_data_analysis_wtq_list
+repeats: 3
+budget: 100000
+arms:
+  as_is:
+    env: {HARNESS_FALLBACK: "on"}

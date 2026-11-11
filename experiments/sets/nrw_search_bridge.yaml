@@ -1,0 +1,23 @@
+# Narrow set nrw_search_bridge: Bridge / compositional two-hop questions (HotpotQA + 2Wiki)
+# Frozen by `lab.py sets freeze` (hash below); built by tools/make_narrow_sets.py; description and task list in sets/narrow/README.md.
+role: dev
+tasks: {search: 32}
+sources: {search: ["hotpotqa", "2wikimultihopqa"]}
+select: {search: {"meta.type": ["bridge", "compositional"]}}
+rewards: {low: 1, high: 5, seed: 7107}
+seed: 7107
+exclude_ids_file: sets/narrow/exclude_ids.txt
+narrow:
+  type: search
+  subgenre: bridge
+  title: "Bridge / compositional two-hop questions (HotpotQA + 2Wiki)"
+  description: "The answer needs an intermediate entity found first (bridge in HotpotQA, compositional in 2Wiki); a chain of two lookups where the first mistake is silent; tests the search loop and rechecks."
+  target_cells: ["solvers/search", "recheck/search", "executor/search"]
+  unanswerable_share: 0
+  reserve_seed: 8107
+  reserve: sets/narrow/manifest.json
+frozen:
+  set_hash: "bc32d06fde4c"
+  n_tasks: 32
+  n_unanswerable: 0
+  by_type: {"search": 32}

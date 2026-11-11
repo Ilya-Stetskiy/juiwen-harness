@@ -1,0 +1,24 @@
+# Narrow set nrw_coding_cg_multi_bug: Repair a library with 3-4 bugs (codegen_fix)
+# Frozen by `lab.py sets freeze` (hash below); built by tools/make_narrow_sets.py; description and task list in sets/narrow/README.md.
+role: dev
+tasks: {coding: 24}
+sources: {coding: ["codegen_fix"]}
+select: {coding: {"meta.n_bugs": [3, 4], "meta.pool": ["main"], "meta.infeasible": ["False"]}}
+unanswerable: {coding: 0}
+rewards: {low: 1, high: 5, seed: 7120}
+seed: 7120
+exclude_ids_file: sets/narrow/exclude_ids.txt
+narrow:
+  type: coding
+  subgenre: cg_multi_bug
+  title: "Repair a library with 3-4 bugs (codegen_fix)"
+  description: "Three or four injected bugs in one file: several fix-test rounds, long outputs, partial fixes; the most expensive feasible coding tasks; tests budget, censor and late fallback."
+  target_cells: ["predictor/coding", "budget/coding", "censor/coding", "fallback/coding"]
+  unanswerable_share: 0.0
+  reserve_seed: 8120
+  reserve: sets/narrow/manifest.json
+frozen:
+  set_hash: "d332b65d515b"
+  n_tasks: 24
+  n_unanswerable: 0
+  by_type: {"coding": 24}

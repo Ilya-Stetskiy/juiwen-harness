@@ -1,0 +1,22 @@
+id: exp-budget-sweep
+name: budget_sweep
+author: human
+hypothesis: >
+  The organisers expect that the budget will NOT cover all tasks (100 tasks, 100 000 tokens stay the working numbers), so the
+  order of solving and the behaviour at a binding budget matter more than checks. Same set and the same harness at budgets
+  20 000, 30 000 and 40 000 (the earlier baseline0 runs spent only 56-66k of 100k and never exercised the budget). Reported:
+  points, points per 1000 tokens, tasks answered, share of the budget used, tasks left unfunded, per type. The sorter is the
+  greedy reward-per-token one, the predictor is the current table; no verification, fallback on.
+change: none (budget only)
+backend: gateway
+model: auto
+set: baseline0
+repeats: 2
+budget: 40000
+arms:
+  b20k:
+    env: {BUDGET: "20000", HARNESS_FALLBACK: "on"}
+  b30k:
+    env: {BUDGET: "30000", HARNESS_FALLBACK: "on"}
+  b40k:
+    env: {BUDGET: "40000", HARNESS_FALLBACK: "on"}

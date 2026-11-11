@@ -1,0 +1,23 @@
+id: exp-mode-sweep-30k
+name: mode_sweep_30k
+author: human
+hypothesis: >
+  The two run modes (profiles/mode_accuracy.yaml, mode_economy.yaml) against legacy (nothing applied) on baseline0 with a
+  binding budget of 30 000, three repeats. Economy (gbm predictor, batches of 8 for math, no verification) should finish more
+  tasks inside the budget and earn more points per token; accuracy (verify other) spends tokens on a second model and may
+  earn fewer points at 30k. Reads: points per run, points per 1k tokens, tokens to the legacy points, accuracy, spend, tasks
+  finished within 30k. Threshold of noise 7.69 points.
+change: HARNESS_RUN_MODE=legacy|accuracy|economy
+backend: gateway
+model: auto
+set: baseline0
+repeats: 3
+budget: 30000
+fallback: "on"
+arms:
+  legacy:
+    env: {HARNESS_RUN_MODE: legacy}
+  accuracy:
+    env: {HARNESS_RUN_MODE: accuracy}
+  economy:
+    env: {HARNESS_RUN_MODE: economy}

@@ -1,0 +1,50 @@
+# Copy to ~/harness-lab/autolab.yaml (a lab file: the model and the chat cannot write it). Everything is optional; these are the defaults.
+max_hyp_per_cycle: 3
+max_llm_calls_per_cycle: 14
+weekly_llm_calls: 1500
+max_queue_depth: 4
+max_expected_requests_cycle: 12000
+max_rerun_repeats: 3
+# Claude API for the generator and the applying agent (evaluation runs stay on qwen through the gateway).
+# The key is NOT here: put it in ~/.config/autolab/anthropic.key (chmod 600). No key file: the autolab uses qwen as before.
+llm_backend: auto                 # auto: Claude (if its key file exists) > DeepSeek (the swarm's key) > qwen; a backend that does not answer is skipped and the chat is told | claude | deepseek | qwen
+claude_model_propose: claude-opus-5-5
+claude_model_apply: claude-opus-5-5
+claude_model_review: claude-opus-5-5      # reviewer; claude-sonnet-5-5 is cheaper, claude-fable-5-1 stronger
+# DeepSeek: key is read from the swarm .env (API_KEY, only when API_BASE there is a DeepSeek endpoint), no money limit
+deepseek_env_file: ~/.jiuwenswarm/config/.env
+deepseek_model_propose: deepseek-flash
+deepseek_model_apply: deepseek-v4-pro
+deepseek_model_review: deepseek-v4-pro
+deepseek_max_tokens: 12000        # includes the model's own reasoning
+claude_effort: medium
+claude_max_tokens: 8000
+usd_per_run: 5.0
+usd_per_week: 50.0
+# accept pushes master here with a deploy key (private key stays in ~/.config/autolab/deploy_key, mode 600); no key: merge on the host only
+push_remote: git@github.com:Ilya-Stetskiy/juiwen-harness.git
+push_branch: master
+deploy_key_file: ~/.config/autolab/deploy_key
+claude_prices: {claude-sonnet-5-5: [2.0, 10.0], claude-opus-5-5: [4.0, 20.0], claude-fable-5-1: [10.0, 50.0], claude-haiku-5-5: [0.1, 0.5]}   # USD per 1M tokens in/out, check against the price list
+# Autopilot (switched on/off from the chat: `автопилот вкл`): keeps the queue fed so the host does not idle
+autopilot_target_depth: 2        # asks the generator when pending + running is below this
+autopilot_batch: 2               # hypotheses per tick (every 10 minutes at most)
+autopilot_max_per_day: 8
+# autopilot_topics: [...]        # default: scheduler/predictor, cheap modes, points per token by type, unsolvable skip, budget behaviour (rotated)
+
+# Claude dollars of everything the autolab calls (the chief included): per process run, per local day, per ISO week
+usd_per_day: 10.0
+# usd_per_week above: 50.0 for the chief
+# The chief (tools/autolab_chief.py; switched on from the chat: `шеф вкл`; cron: */30 * * * * python3 autolab_chief.py)
+claude_model_chief: claude-opus-5-5
+chief_dry_run: true              # plans and tells the chat, executes nothing; a human sets false to let it act
+chief_max_actions: 4             # actions per model call
+chief_max_rounds: 3              # model calls per tick: after a reject / accept it thinks again at once, a review / experiment ends the tick
+chief_event_gap_min: 5           # least minutes between two ticks; a verdict / review / free slot wakes it, else the heartbeat chief_min_gap_min
+chief_max_active: 3              # hypotheses holding task types at once
+chief_max_rechecks: 3            # checks on other data + repeats per hypothesis
+chief_min_gap_min: 25            # minutes between two ticks
+chief_digest_hour: 21            # hour of the daily digest (host time)
+chief_stack_check_every: 2        # accepts onto auto/stack between two whole-stack checks (the stack against main)
+chief_stack_set: ""              # set of the stack check (default: the first dev set); chief_stack_budget: 30000, chief_stack_repeats: 2
+goal_mode: accuracy              # focus of autopilot / cycle / ideas / chief: accuracy | economy | "" (alternate)

@@ -1,0 +1,3002 @@
+{
+ "schema": 1,
+ "updated": "2026-11-10",
+ "formula": "priority = gain_pts * confidence / work (gain_pts: очки на прогон смешанного набора из 100 задач, только измеренные; null = нет данных)",
+ "statuses": [
+  "stub",
+  "works-unexplored",
+  "explored-headroom",
+  "saturated"
+ ],
+ "types": [
+  "coding",
+  "math",
+  "search",
+  "data_analysis"
+ ],
+ "blocks": [
+  "guard",
+  "sandbox",
+  "solvers",
+  "predictor",
+  "sorter",
+  "batcher",
+  "executor",
+  "censor",
+  "verifier",
+  "recheck",
+  "guess",
+  "budget",
+  "fallback",
+  "tokenizer"
+ ],
+ "entries": [
+  {
+   "block": "guard",
+   "type": "_all",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "adversarial_guard"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/guard/_all.md",
+   "next_step": "Измерить долю ложных срабатываний `strip` на обычных наборах (`baseline0`) без модели: считать события `guard` в журналах; затем решать, включать ли `log` по умолчанию.",
+   "journal": {
+    "count": 1,
+    "last": "adversarial_guard",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 1
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "guard",
+   "type": "coding",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "adversarial_guard"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/guard/coding.md",
+   "next_step": "Нет отдельного замера по coding.",
+   "journal": {
+    "count": 1,
+    "last": "adversarial_guard",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 1
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "guard",
+   "type": "math",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "adversarial_guard"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/guard/math.md",
+   "next_step": "Нет отдельного замера по math.",
+   "journal": {
+    "count": 1,
+    "last": "adversarial_guard",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 1
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "guard",
+   "type": "search",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "adversarial_guard"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/guard/search.md",
+   "next_step": "Измерить, меняет ли `strip` ответы на обычных search-задачах (A/A по очкам с `HARNESS_GUARD=strip` против `off`).",
+   "journal": {
+    "count": 1,
+    "last": "adversarial_guard",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 1
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "guard",
+   "type": "data_analysis",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "adversarial_guard"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/guard/data_analysis.md",
+   "next_step": "Нет отдельного замера по data_analysis.",
+   "journal": {
+    "count": 1,
+    "last": "adversarial_guard",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 1
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "sandbox",
+   "type": "_all",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 3,
+   "priority": null,
+   "experiments": [
+    "adversarial_guard"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/sandbox/_all.md",
+   "next_step": "Нет измерения; построить границу — задача сдачи, не лабораторная гипотеза.",
+   "journal": {
+    "count": 1,
+    "last": "adversarial_guard",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 1
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "sandbox",
+   "type": "coding",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 3,
+   "priority": null,
+   "experiments": [
+    "adversarial_guard"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/sandbox/coding.md",
+   "next_step": "Проверить, что `limits` не роняет тесты на `baseline0` (coding).",
+   "journal": {
+    "count": 1,
+    "last": "adversarial_guard",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 1
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "sandbox",
+   "type": "math",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 3,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/sandbox/math.md",
+   "next_step": "Нет данных.",
+   "journal": {
+    "count": 1,
+    "last": "adversarial_guard",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 1
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "sandbox",
+   "type": "search",
+   "status": "n/a",
+   "applicable": false,
+   "headroom": "none",
+   "gain_pts": null,
+   "confidence": 0,
+   "work": 0,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/sandbox/search.md",
+   "next_step": ""
+  },
+  {
+   "block": "sandbox",
+   "type": "data_analysis",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 3,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/sandbox/data_analysis.md",
+   "next_step": "Нет данных.",
+   "journal": {
+    "count": 1,
+    "last": "adversarial_guard",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 1
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "solvers",
+   "type": "_all",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "coding_late_fallback",
+    "coding_late_fallback_v2",
+    "coding_late_tier"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/solvers/_all.md",
+   "next_step": "Прогнать `ab_skip_contradiction_30k` (уже есть черновик) и оценить, есть ли ещё классы задач, закрываемые без LLM (по журналам `baseline0`).",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "solvers",
+   "type": "coding",
+   "status": "saturated",
+   "applicable": true,
+   "headroom": "none",
+   "gain_pts": null,
+   "confidence": 0.6,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "coding_late_fallback",
+    "coding_late_fallback_v2",
+    "baseline0"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/solvers/coding.md",
+   "next_step": "Не трогать. Единственное, что стоит: свериться с образцами задач организаторов, если появятся.",
+   "journal": {
+    "count": 3,
+    "last": "ab_guess_free_contradiction_20k",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-10",
+    "by_mode": {
+     "accuracy": 3,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "none",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "solvers",
+   "type": "math",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 2,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/solvers/math.md",
+   "next_step": "Посчитать по `baseline0`/датасетам, какая доля math-задач — чистая арифметика (без токенов, оффлайн).",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "solvers",
+   "type": "search",
+   "status": "stub",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 3,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/solvers/search.md",
+   "next_step": "Нет, пока нет идеи решателя.",
+   "journal": {
+    "count": 1,
+    "last": "search_check_offline",
+    "last_verdict": "reject",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 1,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "solvers",
+   "type": "data_analysis",
+   "status": "stub",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 3,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/solvers/data_analysis.md",
+   "next_step": "Оффлайн: классифицировать вопросы `baseline0` DA на шаблонные и нет.",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "predictor",
+   "type": "_all",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "medium",
+   "gain_pts": 24.5,
+   "confidence": 0.4,
+   "work": 2,
+   "priority": 4.9,
+   "experiments": [
+    "budget_gbm_30k",
+    "ab_measured_predictor_30k",
+    "budget_sweep",
+    "baseline0"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/predictor/_all.md",
+   "next_step": "Повторить `budget_gbm_30k` с 3 повторами и добавить 20k/40k; не включать `gbm` по умолчанию до этого.",
+   "journal": {
+    "count": 5,
+    "last": "ab_gbm_predictor_20k_tight",
+    "last_verdict": "не запускался",
+    "last_date": "2026-11-10",
+    "by_mode": {
+     "accuracy": 4,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "medium",
+     "gain": 24.5,
+     "confidence": 0.4,
+     "priority": 4.9
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.4,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "predictor",
+   "type": "coding",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "low",
+   "gain_pts": null,
+   "confidence": 0.4,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "budget_gbm_30k"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/predictor/coding.md",
+   "next_step": "Нет, пока общий gbm не подтверждён.",
+   "journal": {
+    "count": 1,
+    "last": "predictor_study_k3",
+    "last_verdict": "accept",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 1,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "low",
+     "gain": null,
+     "confidence": 0.4,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.4,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "predictor",
+   "type": "math",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "medium",
+   "gain_pts": null,
+   "confidence": 0.4,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "budget_gbm_30k",
+    "baseline0"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/predictor/math.md",
+   "next_step": "Нет данных, чем снизить ошибку без источника.",
+   "journal": {
+    "count": 1,
+    "last": "predictor_study_k3",
+    "last_verdict": "accept",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 1,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "medium",
+     "gain": null,
+     "confidence": 0.4,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.4,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "predictor",
+   "type": "search",
+   "status": "saturated",
+   "applicable": true,
+   "headroom": "none",
+   "gain_pts": null,
+   "confidence": 0.6,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "budget_gbm_30k"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/predictor/search.md",
+   "next_step": "Не трогать; перепроверить APE только после появления задач организаторов.",
+   "journal": {
+    "count": 1,
+    "last": "predictor_study_k3",
+    "last_verdict": "accept",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 1,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "none",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "none",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "predictor",
+   "type": "data_analysis",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "medium",
+   "gain_pts": null,
+   "confidence": 0.4,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "budget_gbm_30k",
+    "baseline0"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/predictor/data_analysis.md",
+   "next_step": "Нет данных, какие признаки добавить.",
+   "journal": {
+    "count": 1,
+    "last": "predictor_study_k3",
+    "last_verdict": "accept",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 1,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "medium",
+     "gain": null,
+     "confidence": 0.4,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.4,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "sorter",
+   "type": "_all",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "low",
+   "gain_pts": 9.0,
+   "confidence": 0.15,
+   "work": 1,
+   "priority": 1.35,
+   "experiments": [
+    "ab_test_cheapfirst",
+    "budget_gbm_30k"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/sorter/_all.md",
+   "next_step": "`ab_test_cheapfirst` с 3 повторами на 30k (около 600 запросов).",
+   "journal": {
+    "count": 14,
+    "last": "full_mixed_100k",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-11",
+    "by_mode": {
+     "accuracy": 4,
+     "economy": 8,
+     "оба": 2,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "low",
+     "gain": 9.0,
+     "confidence": 0.15,
+     "priority": 1.35
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.15,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "sorter",
+   "type": "coding",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.15,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "ab_test_cheapfirst"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/sorter/coding.md",
+   "next_step": "Оффлайн: по журналам `budget_gbm_30k` посчитать, какие типы завершены в пределах 30k.",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.15,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.15,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "sorter",
+   "type": "math",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.15,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "ab_test_cheapfirst"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/sorter/math.md",
+   "next_step": "Оффлайн: по журналам `budget_gbm_30k` посчитать, какие типы завершены в пределах 30k.",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.15,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.15,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "sorter",
+   "type": "search",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.15,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "ab_test_cheapfirst"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/sorter/search.md",
+   "next_step": "Оффлайн: по журналам `budget_gbm_30k` посчитать, какие типы завершены в пределах 30k.",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.15,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.15,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "sorter",
+   "type": "data_analysis",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.15,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "ab_test_cheapfirst"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/sorter/data_analysis.md",
+   "next_step": "Оффлайн: по журналам `budget_gbm_30k` посчитать, какие типы завершены в пределах 30k.",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.15,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.15,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "batcher",
+   "type": "_all",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "medium",
+   "gain_pts": null,
+   "confidence": 0.6,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "ab_batch8_auto_30k",
+    "ab_batch8_mixed_accuracy_r3",
+    "ab_batch_math_noreason_30k",
+    "ab_batch8_math104_allmix",
+    "ab_batch8_math104_single",
+    "batch_math_compute2"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/batcher/_all.md",
+   "next_step": "См. `math`.",
+   "journal": {
+    "count": 9,
+    "last": "ab_batch4_vs_batch8_20k",
+    "last_verdict": "не завершён",
+    "last_date": "2026-11-10",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 9,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "medium",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "medium",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "batcher",
+   "type": "coding",
+   "status": "n/a",
+   "applicable": false,
+   "headroom": "none",
+   "gain_pts": null,
+   "confidence": 0,
+   "work": 0,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/batcher/coding.md",
+   "next_step": ""
+  },
+  {
+   "block": "batcher",
+   "type": "math",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "medium",
+   "gain_pts": 27.5,
+   "confidence": 0.6,
+   "work": 1,
+   "priority": 16.5,
+   "experiments": [
+    "ab_batch8_auto_30k",
+    "ab_batch8_mixed_accuracy_r3",
+    "ab_batch_math_noreason_30k",
+    "ab_batch8_math104_allmix",
+    "ab_batch8_math104_single",
+    "batch_math_compute2"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/batcher/math.md",
+   "next_step": "Повторить `ab_batch8_auto_30k` с 3 повторами и добавить бюджеты 20k/40k; затем вопрос, включать ли по умолчанию.",
+   "journal": {
+    "count": 13,
+    "last": "ab_batch4_vs_batch8_20k",
+    "last_verdict": "не завершён",
+    "last_date": "2026-11-10",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 12,
+     "не указан": 1
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "medium",
+     "gain": 27.5,
+     "confidence": 0.6,
+     "priority": 16.5
+    },
+    "economy": {
+     "headroom": "medium",
+     "gain": 17.0,
+     "confidence": 0.4,
+     "priority": 6.8
+    }
+   }
+  },
+  {
+   "block": "batcher",
+   "type": "search",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 2,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/batcher/search.md",
+   "next_step": "Нет, пока нет причины ожидать выигрыш.",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "batcher",
+   "type": "data_analysis",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "ab_batch_data_analysis"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/batcher/data_analysis.md",
+   "next_step": "Запустить `ab_batch_data_analysis`.",
+   "journal": {
+    "count": 1,
+    "last": "ab_batch_data_analysis",
+    "last_verdict": "не запускался",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "executor",
+   "type": "_all",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "high",
+   "gain_pts": null,
+   "confidence": 0.4,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "baseline0",
+    "math_v1_vs_v2",
+    "data_analysis_auto_vs_v1",
+    "search_auto_vs_v1",
+    "coding_pipeline_vs_hybrid",
+    "model_noreason_vs_reason"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/executor/_all.md",
+   "next_step": "См. ячейки типов (search и data_analysis первые).",
+   "journal": {
+    "count": 1,
+    "last": "baseline0",
+    "last_verdict": "эталон",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "high",
+     "gain": null,
+     "confidence": 0.4,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.4,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "executor",
+   "type": "coding",
+   "status": "saturated",
+   "applicable": true,
+   "headroom": "low",
+   "gain_pts": null,
+   "confidence": 0.5,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "baseline0",
+    "coding_pipeline_vs_hybrid",
+    "coding_late_tier"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/executor/coding.md",
+   "next_step": "Не трогать по очкам; стоимость — только если coding занимает долю бюджета при 30k (посчитать по журналам).",
+   "journal": {
+    "count": 2,
+    "last": "baseline0",
+    "last_verdict": "эталон",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 1,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "low",
+     "gain": null,
+     "confidence": 0.5,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.5,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "executor",
+   "type": "math",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "medium",
+   "gain_pts": null,
+   "confidence": 0.4,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "math_v1_vs_v2",
+    "model_noreason_vs_reason",
+    "baseline0",
+    "ab_batch8_math104_single"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/executor/math.md",
+   "next_step": "Сравнить noreason и reasoning на `mixed100_dev` при 30k (оценить цена/точность).",
+   "journal": {
+    "count": 7,
+    "last": "loop_models",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 1,
+     "economy": 1,
+     "оба": 2,
+     "не указан": 3
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "medium",
+     "gain": null,
+     "confidence": 0.4,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.4,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "executor",
+   "type": "search",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "high",
+   "gain_pts": null,
+   "confidence": 0.3,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "search_auto_vs_v1",
+    "baseline0",
+    "verify_other_fresh"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/executor/search.md",
+   "next_step": "Измерить: reasoning-модель на search при 30k и 100k (`model` как параметр варианта) — цена и точность.",
+   "journal": {
+    "count": 2,
+    "last": "baseline0",
+    "last_verdict": "эталон",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 2,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "high",
+     "gain": null,
+     "confidence": 0.3,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.3,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "executor",
+   "type": "data_analysis",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "high",
+   "gain_pts": null,
+   "confidence": 0.4,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "data_analysis_auto_vs_v1",
+    "baseline0"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/executor/data_analysis.md",
+   "next_step": "Разобрать причины неверных ответов DA в журналах `baseline0` (формат против вычисление) — оффлайн.",
+   "journal": {
+    "count": 2,
+    "last": "baseline0",
+    "last_verdict": "эталон",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 1,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "high",
+     "gain": null,
+     "confidence": 0.4,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.4,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "censor",
+   "type": "_all",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "ab_censor_type_caps_30k",
+    "recheck_smoke",
+    "recheck_budget",
+    "loop_models",
+    "ab_censor_type_caps_30k_r4"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/censor/_all.md",
+   "next_step": "Дождаться и прочитать `ab_censor_type_caps_30k_r4` (уже в очереди); подобрать потолки по распределению стоимости `baseline0`.",
+   "journal": {
+    "count": 4,
+    "last": "ab_censor_type_caps_30k_r4",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-10",
+    "by_mode": {
+     "accuracy": 1,
+     "economy": 3,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "low",
+     "gain": 1.0,
+     "confidence": 0.3,
+     "priority": 0.3
+    }
+   }
+  },
+  {
+   "block": "censor",
+   "type": "coding",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "ab_censor_type_caps_30k"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/censor/coding.md",
+   "next_step": "Разделить очки `ab_censor_type_caps_30k` по типам (оффлайн, по `cells.jsonl`).",
+   "journal": {
+    "count": 2,
+    "last": "ab_censor_type_caps_30k_r4",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-10",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 2,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "censor",
+   "type": "math",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "ab_censor_type_caps_30k"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/censor/math.md",
+   "next_step": "Разделить очки `ab_censor_type_caps_30k` по типам (оффлайн, по `cells.jsonl`).",
+   "journal": {
+    "count": 5,
+    "last": "ab_censor_type_caps_30k_r4",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-10",
+    "by_mode": {
+     "accuracy": 1,
+     "economy": 4,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "censor",
+   "type": "search",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "ab_censor_type_caps_30k"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/censor/search.md",
+   "next_step": "Разделить очки `ab_censor_type_caps_30k` по типам (оффлайн, по `cells.jsonl`).",
+   "journal": {
+    "count": 2,
+    "last": "ab_censor_type_caps_30k_r4",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-10",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 2,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "censor",
+   "type": "data_analysis",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "ab_censor_type_caps_30k"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/censor/data_analysis.md",
+   "next_step": "Разделить очки `ab_censor_type_caps_30k` по типам (оффлайн, по `cells.jsonl`).",
+   "journal": {
+    "count": 2,
+    "last": "ab_censor_type_caps_30k_r4",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-10",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 2,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "verifier",
+   "type": "_all",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "medium",
+   "gain_pts": null,
+   "confidence": 0.3,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "verify_other",
+    "verify_other_fresh",
+    "verify_frozen_v2",
+    "verify_fresh_v2",
+    "recheck_budget",
+    "ab_verify_types_selective"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/verifier/_all.md",
+   "next_step": "Набрать размеченные неверные ответы дёшево на локальной модели (`verify_collect_multi`, уже 2 128 строк) и оценить пороги; не гонять шлюзовые A/B.",
+   "journal": {
+    "count": 9,
+    "last": "verify_other_fresh",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 8,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "medium",
+     "gain": null,
+     "confidence": 0.3,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "low",
+     "gain": 11.0,
+     "confidence": 0.2,
+     "priority": 1.1
+    }
+   }
+  },
+  {
+   "block": "verifier",
+   "type": "coding",
+   "status": "saturated",
+   "applicable": true,
+   "headroom": "none",
+   "gain_pts": null,
+   "confidence": 0.6,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "baseline0"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/verifier/coding.md",
+   "next_step": "Не трогать.",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "none",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "verifier",
+   "type": "math",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "low",
+   "gain_pts": null,
+   "confidence": 0.3,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "verify_other",
+    "verify_other_fresh",
+    "ab_verify_types_selective",
+    "ab_recheck_other_math"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/verifier/math.md",
+   "next_step": "Нет, пока не ясно, что ошибок достаточно для выгоды.",
+   "journal": {
+    "count": 6,
+    "last": "verify_other_fresh",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 4,
+     "economy": 0,
+     "оба": 2,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "low",
+     "gain": null,
+     "confidence": 0.3,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.3,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "verifier",
+   "type": "search",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "medium",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 3,
+   "priority": null,
+   "experiments": [
+    "verify_other",
+    "verify_other_fresh",
+    "verify_fresh_v2"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/verifier/search.md",
+   "next_step": "Нет простого эксперимента; сначала разобрать ошибки search по классам.",
+   "journal": {
+    "count": 7,
+    "last": "verify_other_fresh",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 6,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "medium",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "verifier",
+   "type": "data_analysis",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "medium",
+   "gain_pts": null,
+   "confidence": 0.3,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "verify_other",
+    "verify_other_fresh",
+    "recheck_budget"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/verifier/data_analysis.md",
+   "next_step": "Разобрать расхождение симуляции и fresh40 (почему 0 при AUC 0,86).",
+   "journal": {
+    "count": 5,
+    "last": "verify_other_fresh",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 4,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "medium",
+     "gain": null,
+     "confidence": 0.3,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.3,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "recheck",
+   "type": "_all",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "medium",
+   "gain_pts": 1.0,
+   "confidence": 0.2,
+   "work": 2,
+   "priority": 0.1,
+   "experiments": [
+    "recheck_budget",
+    "ab_recheck_other_math",
+    "recheck_later_smoke",
+    "recheck_smoke",
+    "verify_other"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/recheck/_all.md",
+   "next_step": "3 повтора `ab_recheck_other_math` на `mixed100_dev` при 30k.",
+   "journal": {
+    "count": 7,
+    "last": "verify_other_fresh",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 7,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "medium",
+     "gain": 1.0,
+     "confidence": 0.2,
+     "priority": 0.1
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "recheck",
+   "type": "coding",
+   "status": "n/a",
+   "applicable": false,
+   "headroom": "none",
+   "gain_pts": null,
+   "confidence": 0,
+   "work": 0,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/recheck/coding.md",
+   "next_step": ""
+  },
+  {
+   "block": "recheck",
+   "type": "math",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "low",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "ab_recheck_other_math",
+    "recheck_later_smoke"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/recheck/math.md",
+   "next_step": "См. `_all`.",
+   "journal": {
+    "count": 5,
+    "last": "verify_other_fresh",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 5,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "low",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "recheck",
+   "type": "search",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "low",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "verify_other_fresh"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/recheck/search.md",
+   "next_step": "Не включать, пока нет надёжного детектора.",
+   "journal": {
+    "count": 3,
+    "last": "verify_other_fresh",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 3,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "low",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "recheck",
+   "type": "data_analysis",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "medium",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 2,
+   "priority": null,
+   "experiments": [
+    "recheck_budget",
+    "ab_recheck_other_math",
+    "verify_other_fresh"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/recheck/data_analysis.md",
+   "next_step": "См. `verifier/data_analysis`.",
+   "journal": {
+    "count": 4,
+    "last": "verify_other_fresh",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 4,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "medium",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "guess",
+   "type": "_all",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.1,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "ab_guess_free_contradiction_20k",
+    "ab_guess_llm_vs_free_20k_coding"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/guess/_all.md",
+   "next_step": "Уточнить правила оценки у организаторов; до этого эксперименты не строить.",
+   "journal": {
+    "count": 2,
+    "last": "ab_guess_llm_vs_free_20k_coding",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-10",
+    "by_mode": {
+     "accuracy": 2,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.1,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.1,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "guess",
+   "type": "coding",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.1,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "ab_guess_free_contradiction_20k",
+    "ab_guess_llm_vs_free_20k_coding",
+    "ab_skip_contradiction_30k"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/guess/coding.md",
+   "next_step": "См. `_all`.",
+   "journal": {
+    "count": 3,
+    "last": "ab_guess_llm_vs_free_20k_coding",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-10",
+    "by_mode": {
+     "accuracy": 3,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.1,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.1,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "guess",
+   "type": "math",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.1,
+   "work": 1,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/guess/math.md",
+   "next_step": "См. `_all`.",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.1,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.1,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "guess",
+   "type": "search",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.1,
+   "work": 1,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/guess/search.md",
+   "next_step": "См. `_all`.",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.1,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.1,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "guess",
+   "type": "data_analysis",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.1,
+   "work": 1,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/guess/data_analysis.md",
+   "next_step": "См. `_all`.",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.1,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.1,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "budget",
+   "type": "_all",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "budget_sweep",
+    "budget_gbm_30k",
+    "recheck_smoke",
+    "baseline0_b30k"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/budget/_all.md",
+   "next_step": "`HARNESS_BUDGET_HARD=on` против `off` на `baseline0` при 30k (один лабораторный эксперимент, только конфигурация).",
+   "journal": {
+    "count": 8,
+    "last": "mode_hard_30k",
+    "last_verdict": "reject",
+    "last_date": "2026-11-10",
+    "by_mode": {
+     "accuracy": 3,
+     "economy": 1,
+     "оба": 4,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "budget",
+   "type": "coding",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "budget_sweep"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/budget/coding.md",
+   "next_step": "См. `_all`.",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "budget",
+   "type": "math",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "budget_sweep"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/budget/math.md",
+   "next_step": "См. `_all`.",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "budget",
+   "type": "search",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "budget_sweep"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/budget/search.md",
+   "next_step": "См. `_all`.",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "budget",
+   "type": "data_analysis",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "budget_sweep"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/budget/data_analysis.md",
+   "next_step": "См. `_all`.",
+   "journal": {
+    "count": 0,
+    "last": "",
+    "last_verdict": "",
+    "last_date": "",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 0,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "fallback",
+   "type": "_all",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "low",
+   "gain_pts": 3.7,
+   "confidence": 0.3,
+   "work": 1,
+   "priority": 1.11,
+   "experiments": [
+    "baseline0",
+    "coding_late_tier",
+    "coding_late_fallback_v2",
+    "coding_pipeline_vs_hybrid",
+    "ab_fallback_late_30k"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/fallback/_all.md",
+   "next_step": "Прочитать `ab_fallback_late_30k`, когда завершится (очередь `running`).",
+   "journal": {
+    "count": 3,
+    "last": "ab_fallback_late_30k",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-10",
+    "by_mode": {
+     "accuracy": 1,
+     "economy": 0,
+     "оба": 2,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "low",
+     "gain": 3.7,
+     "confidence": 0.3,
+     "priority": 1.11
+    },
+    "economy": {
+     "headroom": "medium",
+     "gain": 24.0,
+     "confidence": 0.3,
+     "priority": 7.2
+    }
+   }
+  },
+  {
+   "block": "fallback",
+   "type": "coding",
+   "status": "explored-headroom",
+   "applicable": true,
+   "headroom": "medium",
+   "gain_pts": null,
+   "confidence": 0.3,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "coding_late_tier",
+    "coding_pipeline_vs_hybrid",
+    "coding_late_fallback_v2",
+    "ab_fallback_off_30k"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/fallback/coding.md",
+   "next_step": "См. `_all`.",
+   "journal": {
+    "count": 7,
+    "last": "ab_fallback_off_30k",
+    "last_verdict": "failed",
+    "last_date": "2026-11-10",
+    "by_mode": {
+     "accuracy": 4,
+     "economy": 0,
+     "оба": 3,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "medium",
+     "gain": null,
+     "confidence": 0.3,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.3,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "fallback",
+   "type": "math",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "baseline0"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/fallback/math.md",
+   "next_step": "См. `_all`.",
+   "journal": {
+    "count": 1,
+    "last": "baseline0",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "fallback",
+   "type": "search",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "baseline0"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/fallback/search.md",
+   "next_step": "См. `_all`.",
+   "journal": {
+    "count": 1,
+    "last": "baseline0",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "fallback",
+   "type": "data_analysis",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.2,
+   "work": 1,
+   "priority": null,
+   "experiments": [
+    "baseline0"
+   ],
+   "checked": "2026-11-10",
+   "file": "blocks/fallback/data_analysis.md",
+   "next_step": "См. `_all`.",
+   "journal": {
+    "count": 1,
+    "last": "baseline0",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.2,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "tokenizer",
+   "type": "_all",
+   "status": "saturated",
+   "applicable": true,
+   "headroom": "low",
+   "gain_pts": null,
+   "confidence": 0.6,
+   "work": 1,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/tokenizer/_all.md",
+   "next_step": "Не трогать счёт; включить `on` вместе с `HARD=on`/`gbm`, если те подтвердятся.",
+   "journal": {
+    "count": 1,
+    "last": "tokenizer_check_k2",
+    "last_verdict": "accept",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "low",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "none",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "tokenizer",
+   "type": "coding",
+   "status": "works-unexplored",
+   "applicable": true,
+   "headroom": "unknown",
+   "gain_pts": null,
+   "confidence": 0.3,
+   "work": 1,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/tokenizer/coding.md",
+   "next_step": "Нет.",
+   "journal": {
+    "count": 1,
+    "last": "tokenizer_check_k2",
+    "last_verdict": "clarify",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.3,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "unknown",
+     "gain": null,
+     "confidence": 0.3,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "tokenizer",
+   "type": "math",
+   "status": "saturated",
+   "applicable": true,
+   "headroom": "none",
+   "gain_pts": null,
+   "confidence": 0.6,
+   "work": 1,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/tokenizer/math.md",
+   "next_step": "Не трогать.",
+   "journal": {
+    "count": 1,
+    "last": "tokenizer_check_k2",
+    "last_verdict": "accept",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "none",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "none",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "tokenizer",
+   "type": "search",
+   "status": "saturated",
+   "applicable": true,
+   "headroom": "none",
+   "gain_pts": null,
+   "confidence": 0.6,
+   "work": 1,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/tokenizer/search.md",
+   "next_step": "Не трогать.",
+   "journal": {
+    "count": 1,
+    "last": "tokenizer_check_k2",
+    "last_verdict": "accept",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "none",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "none",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    }
+   }
+  },
+  {
+   "block": "tokenizer",
+   "type": "data_analysis",
+   "status": "saturated",
+   "applicable": true,
+   "headroom": "none",
+   "gain_pts": null,
+   "confidence": 0.6,
+   "work": 1,
+   "priority": null,
+   "experiments": [],
+   "checked": "2026-11-10",
+   "file": "blocks/tokenizer/data_analysis.md",
+   "next_step": "Не трогать.",
+   "journal": {
+    "count": 1,
+    "last": "tokenizer_check_k2",
+    "last_verdict": "accept",
+    "last_date": "2026-11-09",
+    "by_mode": {
+     "accuracy": 0,
+     "economy": 0,
+     "оба": 1,
+     "не указан": 0
+    }
+   },
+   "modes": {
+    "accuracy": {
+     "headroom": "none",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    },
+    "economy": {
+     "headroom": "none",
+     "gain": null,
+     "confidence": 0.6,
+     "priority": null
+    }
+   }
+  }
+ ]
+}

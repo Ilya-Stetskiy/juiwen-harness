@@ -1,0 +1,5 @@
+{"note": "share of correct answers (hybrid_correct) by task type and model over the token stream (results.jsonl, about 2000 tasks per cell, mixed answerable/unanswerable); for HARNESS_PSUCCESS=measured (review R-X5). Aggregate by type and model only: no task id is used.",
+ "coding": {"qwen3.6-35b-a3b": 0.8146, "qwen3.6-35b-a3b-noreason": 0.8332, "qwen3.8-27b": 0.8654, "qwen3.8-27b-noreason": 0.836},
+ "data_analysis": {"qwen3.6-35b-a3b": 0.6022, "qwen3.6-35b-a3b-noreason": 0.5926, "qwen3.8-27b": 0.619, "qwen3.8-27b-noreason": 0.5909},
+ "math": {"qwen3.6-35b-a3b": 0.77, "qwen3.6-35b-a3b-noreason": 0.745, "qwen3.8-27b": 0.8354, "qwen3.8-27b-noreason": 0.7634},
+ "search": {"qwen3.6-35b-a3b": 0.6825, "qwen3.6-35b-a3b-noreason": 0.622, "qwen3.8-27b": 0.6933, "qwen3.8-27b-noreason": 0.612}}

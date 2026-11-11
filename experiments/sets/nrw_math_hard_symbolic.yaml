@@ -1,0 +1,23 @@
+# Narrow set nrw_math_hard_symbolic: Hard symbolic mathematics (intermediate algebra and precalculus, levels 4-5)
+# Frozen by `lab.py sets freeze` (hash below); built by tools/make_narrow_sets.py; description and task list in sets/narrow/README.md.
+role: dev
+tasks: {math: 24}
+sources: {math: ["math_intermediate_algebra", "math_precalculus"]}
+select: {math: {"meta.level": ["Level 4", "Level 5"]}}
+rewards: {low: 1, high: 5, seed: 7105}
+seed: 7105
+exclude_ids_file: sets/narrow/exclude_ids.txt
+narrow:
+  type: math
+  subgenre: hard_symbolic
+  title: "Hard symbolic mathematics (intermediate algebra and precalculus, levels 4-5)"
+  description: "Competition-style hard problems: long outputs, high variance of cost, a sizeable share of unsolvable tasks; tests budget stop, cost censoring, loop detector, fallback."
+  target_cells: ["budget/math", "censor/math", "fallback/math", "predictor/math", "guess/math"]
+  unanswerable_share: 0
+  reserve_seed: 8105
+  reserve: sets/narrow/manifest.json
+frozen:
+  set_hash: "3ffa51f4b3e2"
+  n_tasks: 24
+  n_unanswerable: 0
+  by_type: {"math": 24}

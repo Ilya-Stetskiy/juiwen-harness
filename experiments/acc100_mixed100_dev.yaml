@@ -1,0 +1,17 @@
+id: exp-acc100-mixed100_dev
+name: acc100_mixed100_dev
+author: human
+priority: 10
+hypothesis: >
+  Accuracy mode at the announced contest budget 100 000 on mixed100_dev, with the hard cap on (HARNESS_HARD_CAP=on: the run is cut as soon as the
+  API-reported cost reaches the budget). Three repeats. Also checks the cap on a real run: hard_cap_hit / cap_clamp in the journal, spent close to 100 000.
+change: HARNESS_RUN_MODE=accuracy HARNESS_HARD_CAP=on
+backend: gateway
+model: auto
+set: mixed100_dev
+repeats: 3
+budget: 100000
+fallback: "on"
+arms:
+  accuracy_cap:
+    env: {HARNESS_RUN_MODE: accuracy, HARNESS_HARD_CAP: "on", HARNESS_SANDBOX: scrub}

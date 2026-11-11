@@ -1,0 +1,23 @@
+id: exp-parts-baseline0-60k
+name: parts_baseline0_60k
+author: human
+hypothesis: >
+  Decomposition of economy at 60 000 on baseline0: legacy, gbm predictor only, math batches only, gbm+batches (economy without tokenizer), full economy. Why economy was -9.7 on mixed100_dev at 60k, and which component gives the gain at 30k.
+change: components of profiles/mode_economy.yaml
+backend: gateway
+model: auto
+set: baseline0
+repeats: 3
+budget: 60000
+fallback: "on"
+arms:
+  legacy:
+    env: {HARNESS_RUN_MODE: legacy}
+  gbm_only:
+    env: {HARNESS_PREDICTOR: gbm}
+  batch_only:
+    env: {HARNESS_BATCH_SIZE: "8", HARNESS_BATCH_PROMPT: compute, HARNESS_BATCH_TYPES: math}
+  gbm_batch:
+    env: {HARNESS_PREDICTOR: gbm, HARNESS_BATCH_SIZE: "8", HARNESS_BATCH_PROMPT: compute, HARNESS_BATCH_TYPES: math}
+  economy:
+    env: {HARNESS_RUN_MODE: economy}

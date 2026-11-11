@@ -1,0 +1,23 @@
+# Narrow set nrw_data_analysis_wtq_list: Table questions with a list answer (WikiTableQuestions, exact_set)
+# Frozen by `lab.py sets freeze` (hash below); built by tools/make_narrow_sets.py; description and task list in sets/narrow/README.md.
+role: dev
+tasks: {data_analysis: 24}
+sources: {data_analysis: ["wikitablequestions"]}
+select: {data_analysis: {"check": ["exact_set"], "instruction": {"not_re": "\\((?:[4-9]\\d|\\d{2,}\\d) rows\\)"}}}
+rewards: {low: 1, high: 5, seed: 7115}
+seed: 7115
+exclude_ids_file: sets/narrow/exclude_ids.txt
+narrow:
+  type: data_analysis
+  subgenre: wtq_list
+  title: "Table questions with a list answer (WikiTableQuestions, exact_set)"
+  description: "The answer is a list of items separated by '|'; scoring is by set match, so a missing or extra item fails the task; tests answer formatting and the verifier on multi-part answers."
+  target_cells: ["solvers/data_analysis", "verifier/data_analysis", "guess/data_analysis"]
+  unanswerable_share: 0
+  reserve_seed: 8115
+  reserve: sets/narrow/manifest.json
+frozen:
+  set_hash: "6469d123dac3"
+  n_tasks: 24
+  n_unanswerable: 0
+  by_type: {"data_analysis": 24}

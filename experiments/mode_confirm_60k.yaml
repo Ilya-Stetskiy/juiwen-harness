@@ -1,0 +1,17 @@
+id: exp-mode-confirm-60k
+name: mode_confirm_60k
+author: human
+hypothesis: >
+  Confirmation of economy against legacy on baseline0 at 60 000, three NEW repeats (mode_sweep_60k gave +14.5 [-1; +31] with two). Same code version f251470; the two sets of repeats are not mixed.
+change: HARNESS_RUN_MODE=legacy|economy
+backend: gateway
+model: auto
+set: baseline0
+repeats: 3
+budget: 60000
+fallback: "on"
+arms:
+  legacy:
+    env: {HARNESS_RUN_MODE: legacy}
+  economy:
+    env: {HARNESS_RUN_MODE: economy}

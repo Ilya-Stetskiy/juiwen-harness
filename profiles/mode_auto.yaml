@@ -1,0 +1,12 @@
+# Thresholds of HARNESS_RUN_MODE=auto (not measured: set by reasoning, change after the organizers' tasks are known).
+# The estimate is the sum over all tasks of the gbm cost model for the cheapest model (noreason), compared with BUDGET.
+accuracy_if_p50_ratio_at_most: 0.70   # p50 sum / budget; above it (or on the boundary): economy
+accuracy_if_p90_ratio_at_most: 1.30   # p90 sum / budget (the sum of p90s is a loose upper bound)
+model: qwen3.6-35b-a3b-noreason
+
+# HARNESS_RUN_MODE=adaptive (harness/adaptive.py): ratio = estimated cost of the queue not started yet (gbm p50, corrected by the
+# observed actual/predicted) / remaining budget. Hysteresis: economy above `economy_above`, accuracy below `accuracy_below`,
+# in between the mode stays. Not measured: set by reasoning.
+adaptive:
+  economy_above: 0.80
+  accuracy_below: 0.50

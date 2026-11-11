@@ -1,0 +1,23 @@
+# Narrow set nrw_search_comparison: Comparison questions (HotpotQA + 2Wiki)
+# Frozen by `lab.py sets freeze` (hash below); built by tools/make_narrow_sets.py; description and task list in sets/narrow/README.md.
+role: dev
+tasks: {search: 32}
+sources: {search: ["hotpotqa", "2wikimultihopqa"]}
+select: {search: {"meta.type": ["comparison"]}}
+rewards: {low: 1, high: 5, seed: 7106}
+seed: 7106
+exclude_ids_file: sets/narrow/exclude_ids.txt
+narrow:
+  type: search
+  subgenre: comparison
+  title: "Comparison questions (HotpotQA + 2Wiki)"
+  description: "Two entities, one attribute, pick one or yes/no: two parallel lookups in kb/*.md, short answers; tests retrieval over 10 paragraphs and the answer check."
+  target_cells: ["solvers/search", "executor/search", "verifier/search"]
+  unanswerable_share: 0
+  reserve_seed: 8106
+  reserve: sets/narrow/manifest.json
+frozen:
+  set_hash: "47a7ce07e126"
+  n_tasks: 32
+  n_unanswerable: 0
+  by_type: {"search": 32}

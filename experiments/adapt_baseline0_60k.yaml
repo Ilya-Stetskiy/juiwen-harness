@@ -1,0 +1,21 @@
+id: exp-adapt-baseline0-60k
+name: adapt_baseline0_60k
+author: human
+hypothesis: >
+  HARNESS_RUN_MODE=adaptive (queue estimate against the remaining budget, switches between the economy and accuracy values during the run)
+  against legacy and economy on baseline0 at 60000 tokens, three repeats. Expected: not worse than the better of the two; the switch events show whether it ever leaves economy.
+change: HARNESS_RUN_MODE=adaptive
+backend: gateway
+model: auto
+set: baseline0
+repeats: 3
+budget: 60000
+fallback: "on"
+priority: -1
+arms:
+  legacy:
+    env: {HARNESS_RUN_MODE: legacy}
+  economy:
+    env: {HARNESS_RUN_MODE: economy}
+  adaptive:
+    env: {HARNESS_RUN_MODE: adaptive}

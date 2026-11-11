@@ -1,0 +1,24 @@
+# Narrow set nrw_coding_cg_large_file: Repair of large files, 6-8 functions with 2 bugs (codegen_fix)
+# Frozen by `lab.py sets freeze` (hash below); built by tools/make_narrow_sets.py; description and task list in sets/narrow/README.md.
+role: dev
+tasks: {coding: 24}
+sources: {coding: ["codegen_fix"]}
+select: {coding: {"meta.n_bugs": [2], "meta.pool": ["main"], "meta.infeasible": ["False"], "meta.n_functions": [6, 7, 8]}}
+unanswerable: {coding: 0}
+rewards: {low: 1, high: 5, seed: 7122}
+seed: 7122
+exclude_ids_file: sets/narrow/exclude_ids.txt
+narrow:
+  type: coding
+  subgenre: cg_large_file
+  title: "Repair of large files, 6-8 functions with 2 bugs (codegen_fix)"
+  description: "Larger files with two bugs: long prompts and test output; tests cost prediction from workspace size and the order of tasks."
+  target_cells: ["predictor/coding", "sorter/coding", "tokenizer/coding", "budget/coding"]
+  unanswerable_share: 0.0
+  reserve_seed: 8122
+  reserve: sets/narrow/manifest.json
+frozen:
+  set_hash: "36c398cc076f"
+  n_tasks: 24
+  n_unanswerable: 0
+  by_type: {"coding": 24}

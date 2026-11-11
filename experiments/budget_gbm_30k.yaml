@@ -1,0 +1,24 @@
+id: exp-budget-gbm-30k
+name: budget_gbm_30k
+author: human
+hypothesis: >
+  With a binding budget (30 000 of the usual 100 000) the order of solving decides the points: the sorter ranks tasks by
+  reward per expected token, so a better cost prediction should give more points per token. The tree cost model
+  (HARNESS_PREDICTOR=gbm: type, thinking, sizes and exact Qwen token counts; cross-validated median APE 0.27 on the stream
+  results against 0.78 of the placeholder table) against the placeholder table, same set baseline0, same harness, budget
+  30 000, two repeats. Expected: more points at the same spend, mostly because cheap tasks (search by input size) are put first
+  and expensive coding tasks are not started when they do not fit. It can fail if the stream-trained model does not transfer
+  to these tasks (they come from the same open datasets, so a transfer failure would show here), or if the sorter is not
+  sensitive to the estimate.
+change: HARNESS_PREDICTOR=gbm
+backend: gateway
+model: auto
+set: baseline0
+repeats: 2
+budget: 30000
+fallback: "on"
+arms:
+  placeholder:
+    env: {HARNESS_PREDICTOR: placeholder}
+  gbm:
+    env: {HARNESS_PREDICTOR: gbm}

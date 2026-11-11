@@ -36,12 +36,12 @@ def _f(name: str, default: float) -> float:
         return default
 
 
-def reserve(ctx, prompt_chars: int, max_tokens: int, recheck: bool = False) -> float:
+def reserve(ctx, prompt_chars: int, max_tokens: int, recheck: bool = False, prompt_tokens: int | None = None) -> float:
     """Reserve the worst-case cost of one call; BudgetStop when it does not fit."""
     global _reserved
     if not enabled():
         return 0.0
-    est = prompt_chars / 4.0 / 10.0 + max_tokens
+    est = (prompt_tokens if prompt_tokens is not None else prompt_chars / 4.0) / 10.0 + max_tokens   # exact count with HARNESS_TOKENIZER=on
     stop = _f("HARNESS_BUDGET_STOP", 0.97)
     line = ctx.cfg.budget * (stop if recheck else stop - _f("HARNESS_BUDGET_RECHECK", 0.0))
     with _lock:

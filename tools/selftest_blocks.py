@@ -282,6 +282,149 @@ def test_verify_other():
         pipelines.PIPELINES["search"] = old
 
 
+def test_tokcount():
+    from harness import tokcount
+    assert not tokcount.enabled()
+    if tokcount.exact():
+        # ids checked against llama.cpp /tokenize of the served model: 16 tokens
+        assert tokcount.count("Hello world, in which year was Boris Weber born? 2004") == 16
+        assert tokcount.chat_prompt_tokens("a", "b", "qwen3.6-35b-a3b-noreason") == 2 + tokcount.OVERHEAD_NOREASON
+        assert tokcount.chat_prompt_tokens("a", "b", "qwen3.8-27b") == 2 + tokcount.OVERHEAD_REASON
+    from harness import budget
+    from types import SimpleNamespace as NS
+    ledger = NS(spent=lambda: 0.0)
+    ctx = NS(cfg=NS(budget=1000), ledger=ledger, journal=NS(event=lambda *a, **k: None), task=NS(task_id="t"))
+    with Env(HARNESS_BUDGET_HARD="on"):
+        budget._reserved = 0.0
+        e1 = budget.reserve(ctx, 4000, 100)
+        e2 = budget.reserve(ctx, 4000, 100, prompt_tokens=2000)
+        assert abs(e1 - 200.0) < 1e-6 and abs(e2 - 300.0) < 1e-6
+        budget._reserved = 0.0
+
+
+def test_early_answer():
+    import asyncio
+    from types import SimpleNamespace as NS
+    from harness import executor, judge
+    got = []
+    executor.EARLY_ANSWER = lambda t, a: got.append(a)
+    task = NS(task_id="t", task_type="math", check="exact_int", instruction="q")
+
+    async def slow_verify(ctx, task, answer):   # the run is "cut" here: the answer must already have been handed out
+        assert got == ["42"]
+        return None
+    old = judge.verify_answer
+    judge.verify_answer = slow_verify
+    try:
+        r = asyncio.run(executor._verify_loop(NS(extra={}), None, task, "m", None, None, None, None, "solved", "42"))
+        assert r == ("solved", "42")
+    finally:
+        judge.verify_answer = old
+        executor.EARLY_ANSWER = None
+
+
+def test_gbm_predictor():
+    from types import SimpleNamespace as NS
+    from harness import costmodel
+    from harness.predictor import PREDICTORS, GbmPredictor
+    m = costmodel.load()
+    assert m is not None, "profiles/cost_model.json missing"
+    r = m.predict([0, 1, 0, 0, 0, 0, 20000.0, 12.0, 30.0, 4000.0])      # a search task, noreason
+    assert r["p10"] <= r["p50"] <= r["p90"] and 100 < r["p50"] < 1000, r
+    assert "gbm" in PREDICTORS
+    task = NS(task_id="x", task_type="math", instruction="What is 2+2?", workspace=None, workspace_bytes=0)
+    pr = GbmPredictor().predict(task, "qwen3.6-35b-a3b-noreason")
+    assert pr.tokens_p10 <= pr.tokens_p50 <= pr.tokens_p90 and pr.tokens_p50 > 0
+
+
+def test_run_mode():
+    import os
+    from types import SimpleNamespace as NS
+    from harness import mode
+    keys = ["HARNESS_RUN_MODE", "HARNESS_BATCH_SIZE", "HARNESS_VERIFY", "HARNESS_PREDICTOR", "HARNESS_TOKENIZER", "HARNESS_BATCH_PROMPT",
+            "HARNESS_BATCH_TYPES", "HARNESS_SORTER"]
+    saved = {k: os.environ.pop(k, None) for k in keys}
+    try:
+        assert mode.apply([], 1000.0)["mode"] == "legacy" and "HARNESS_BATCH_SIZE" not in os.environ   # default: untouched
+        os.environ["HARNESS_RUN_MODE"] = "economy"
+        os.environ["HARNESS_BATCH_SIZE"] = "2"                                                         # explicit env wins
+        rec = mode.apply([], 1000.0)
+        assert rec["mode"] == "economy" and os.environ["HARNESS_BATCH_SIZE"] == "2" and "HARNESS_BATCH_SIZE" in rec["overridden"]
+        assert os.environ["HARNESS_PREDICTOR"] == "gbm"
+        t = NS(task_id="m", task_type="math", instruction="What is 2+2?", workspace=None, workspace_bytes=0)
+        small, info = mode.decide([t] * 10, 1_000_000.0)
+        big, _ = mode.decide([t] * 10, 1000.0)
+        edge, _ = mode.decide([], 1000.0, est={"p10": 1, "p50": 700.0, "p90": 800.0, "n": 1})
+        assert (small, big, edge) == ("accuracy", "economy", "economy"), (small, big, edge, info)
+        assert mode.decide([], 1000.0, est=None)[0] == "economy" or mode.estimate([t]) is not None
+    finally:
+        for k in keys:
+            os.environ.pop(k, None)
+            if saved[k] is not None:
+                os.environ[k] = saved[k]
+
+
+def test_adaptive_mode():
+    import os
+    from harness import adaptive, mode
+    keys = ["HARNESS_RUN_MODE", "HARNESS_BATCH_SIZE", "HARNESS_VERIFY", "HARNESS_PREDICTOR", "HARNESS_TOKENIZER", "HARNESS_BATCH_PROMPT",
+            "HARNESS_BATCH_TYPES", "HARNESS_RUN_MODE_EFFECTIVE"]
+    saved = {k: os.environ.pop(k, None) for k in keys}
+
+    class Sched:
+        q = {"n": 10, "p50": 1000.0, "p90": 3000.0, "inflight": 0.0}
+
+        def queue_estimate(self):
+            return self.q
+
+    class J:
+        def __init__(self):
+            self.ev = []
+
+        def event(self, name, **kw):
+            self.ev.append((name, kw))
+    try:
+        os.environ["HARNESS_RUN_MODE"] = "adaptive"
+        rec = mode.apply([], 1000.0)
+        assert rec["mode"] == "adaptive" and os.environ["HARNESS_PREDICTOR"] == "gbm" and "HARNESS_BATCH_SIZE" not in os.environ
+        j, s = J(), Sched()
+        c = adaptive.make(s, 10000.0, j, rec)
+        c.update(0.0)                                   # ratio 0.1 -> accuracy at the start
+        assert c.mode == "accuracy" and os.environ["HARNESS_VERIFY"] == "other" and "HARNESS_BATCH_SIZE" not in os.environ
+        s.q = dict(s.q, p50=6500.0)
+        c.update(0.0)                                   # 0.65: inside the band, stays
+        assert c.mode == "accuracy"
+        s.q = dict(s.q, p50=9000.0)
+        c.update(0.0)                                   # 0.9 -> economy
+        assert c.mode == "economy" and os.environ["HARNESS_BATCH_SIZE"] == "8" and os.environ["HARNESS_VERIFY"] == "off"
+        s.q = dict(s.q, p50=6500.0)
+        c.update(0.0)                                   # 0.65: hysteresis, stays economy
+        assert c.mode == "economy"
+        s.q = dict(s.q, p50=1000.0)
+        c.update(0.0)                                   # 0.1 -> accuracy again
+        assert c.mode == "accuracy" and "HARNESS_BATCH_SIZE" not in os.environ
+        assert [e[0] for e in j.ev] == ["mode_switch"] * 3 and j.ev[1][1]["reason"] == "queue does not fit"
+        assert adaptive.make(s, 1.0, j, {"mode": "economy"}) is None
+        # an explicit variable is never touched
+        os.environ["HARNESS_VERIFY"] = "free"
+        c2 = adaptive.make(s, 10000.0, J(), rec)
+        c2.update(0.0)
+        assert os.environ["HARNESS_VERIFY"] == "free"
+    finally:
+        for k in keys:
+            os.environ.pop(k, None)
+            if saved[k] is not None:
+                os.environ[k] = saved[k]
+
+
+def test_entry_point_compiles():
+    import py_compile
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    for f in ("run_agent.py", "harness/mode.py", "harness/adaptive.py", "harness/sorter.py"):
+        py_compile.compile(str(root / f), doraise=True)
+
+
 def main():
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

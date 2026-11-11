@@ -1,0 +1,24 @@
+# Narrow set nrw_search_multihop_deep: Deep multi-hop questions, 3-4 hops (MuSiQue, answerable)
+# Frozen by `lab.py sets freeze` (hash below); built by tools/make_narrow_sets.py; description and task list in sets/narrow/README.md.
+role: dev
+tasks: {search: 30}
+sources: {search: ["musique_full"]}
+select: {search: {"meta.hops": [3, 4]}}
+unanswerable: {search: 0}
+rewards: {low: 1, high: 5, seed: 7108}
+seed: 7108
+exclude_ids_file: sets/narrow/exclude_ids.txt
+narrow:
+  type: search
+  subgenre: multihop_deep
+  title: "Deep multi-hop questions, 3-4 hops (MuSiQue, answerable)"
+  description: "MuSiQue questions that need 3-4 hops over 20 paragraphs, all answerable; the hardest and most expensive search tasks, accuracy low; tests budget stop and cost prediction."
+  target_cells: ["budget/search", "censor/search", "predictor/search", "solvers/search"]
+  unanswerable_share: 0.0
+  reserve_seed: 8108
+  reserve: sets/narrow/manifest.json
+frozen:
+  set_hash: "c176a0eafff8"
+  n_tasks: 30
+  n_unanswerable: 0
+  by_type: {"search": 30}

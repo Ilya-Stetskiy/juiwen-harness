@@ -1,0 +1,18 @@
+id: exp-acc100-baseline0-v2
+name: acc100_baseline0_v2
+author: human
+priority: 20
+hypothesis: >
+  Accuracy mode on baseline0 at the contest budget (1000 tokens per task = 100 000), on the code after the fresh review: hard cap with the
+  serial mode after 98%, concurrency limit 3, 429 pause by the gateway's retry-after, the agent path under the same guard. Three repeats.
+  Reads: points per run at the full budget, spent tokens (does the cap ever fire, overshoot), call_retry / rate_limit / cap_* events in the journal.
+change: HARNESS_RUN_MODE=accuracy HARNESS_HARD_CAP=on
+backend: gateway
+model: auto
+set: baseline0
+repeats: 3
+budget: auto
+fallback: "on"
+arms:
+  accuracy:
+    env: {HARNESS_RUN_MODE: accuracy, HARNESS_HARD_CAP: "on", HARNESS_SANDBOX: scrub}

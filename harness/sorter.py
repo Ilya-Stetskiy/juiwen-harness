@@ -16,6 +16,25 @@ UNSOLVABLE_SKIP = 0.5
 EMA_ALPHA = 0.3
 
 
+def expected_basis(p: Prediction) -> Prediction:
+    """R-X4. HARNESS_COST_BASIS=p50 (default): plan on the median, as before. mean: plan on the expected cost: the cost is heavy-tailed
+    (sum of p50 over baseline0 32.7k, real spend 64-69k), so the median under-counts. The mean of a lognormal with the median p50 and the
+    90th percentile p90 is p50 * exp(s^2 / 2), s = ln(p90 / p50) / 1.2816, s capped at HARNESS_COST_SIGMA_MAX (default 1.0, the
+    multiplier 1.65) because the quantile range of the gbm model is wider than the observed spread. Stored in `tokens_p50`, so the
+    sorter, the correction factor and the adaptive controller all see the same number."""
+    if os.environ.get("HARNESS_COST_BASIS", "p50").strip().lower() != "mean":
+        return p
+    import math
+    try:
+        smax = float(os.environ.get("HARNESS_COST_SIGMA_MAX", "1.0") or 1.0)
+    except ValueError:
+        smax = 1.0
+    if p.tokens_p50 <= 0 or p.tokens_p90 <= p.tokens_p50:
+        return p
+    s = min(math.log(p.tokens_p90 / p.tokens_p50) / 1.2816, max(smax, 0.0))
+    return Prediction(p.tokens_p50 * math.exp(s * s / 2.0), p.tokens_p90, p.p_success, p.tokens_p10)
+
+
 class Scheduler:
     """Greedy knapsack by reward * p_success / tokens (the default, HARNESS_SORTER=greedy)."""
 
@@ -39,7 +58,7 @@ class Scheduler:
                 continue
             self._remaining[t.task_id] = t
             for m in self._models:
-                self._preds[(t.task_id, m)] = predictor.predict(t, m)
+                self._preds[(t.task_id, m)] = expected_basis(predictor.predict(t, m))
 
     def _corrected(self, task: TaskInfo, model: str) -> Prediction:
         p = self._preds[(task.task_id, model)]
@@ -70,6 +89,11 @@ class Scheduler:
             self._inflight[t.task_id] = p.tokens_p50
             return t, m, p
 
+    def pending(self) -> tuple[int, int]:
+        """(tasks not started, tasks in flight): a worker that finds nothing that fits may wait while others are in flight (R-X3)."""
+        with self._lock:
+            return len(self._remaining), len(self._inflight)
+
     def take_more(self, task_type: str, model: str, k: int, spent: float) -> list[tuple[TaskInfo, Prediction]]:
         """Up to k more tasks of one type for a batch (S11): best score first, only while they fit into the budget."""
         out: list[tuple[TaskInfo, Prediction]] = []
@@ -97,6 +121,18 @@ class Scheduler:
                 key = (task.task_type, model)
                 ratio = actual_cost / base.tokens_p50
                 self._k[key] = (1 - EMA_ALPHA) * self._k.get(key, 1.0) + EMA_ALPHA * ratio
+
+    def queue_estimate(self) -> dict:
+        """Cost of the tasks not started yet on the cheapest model (corrected by the observed ratios) and the tokens in flight:
+        {n, p50, p90, inflight}. Used by the adaptive mode controller."""
+        with self._lock:
+            tot50 = tot90 = 0.0
+            for t in self._remaining.values():
+                ps = [self._corrected(t, m) for m in self._models]
+                best = min(ps, key=lambda p: p.tokens_p50)
+                tot50 += best.tokens_p50
+                tot90 += best.tokens_p90
+            return {"n": len(self._remaining), "p50": tot50, "p90": tot90, "inflight": sum(self._inflight.values())}
 
     def correction(self) -> dict[str, float]:
         with self._lock:

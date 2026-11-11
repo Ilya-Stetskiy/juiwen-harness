@@ -1,0 +1,6 @@
+# Mode "accuracy": maximum points within the budget; tokens may go to verification. Values are ONLY switches that were measured
+# (harness-gap.md section H, K; status/blocks). Explicit environment variables override every line.
+env:
+  HARNESS_VERIFY: other          # verify_other: +9.0 [+0.5; +20] on the frozen set, not confirmed on the fresh set (-0.7): weak, kept as the only measured accuracy lever
+  HARNESS_PREDICTOR: gbm         # budget_gbm_30k; harmless when the budget is not binding
+  HARNESS_TOKENIZER: "on"        # exact Qwen input count for the budget ledger

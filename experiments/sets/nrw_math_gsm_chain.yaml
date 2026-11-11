@@ -1,0 +1,23 @@
+# Narrow set nrw_math_gsm_chain: Grade-school word problems with long arithmetic chains (4-9 steps)
+# Frozen by `lab.py sets freeze` (hash below); built by tools/make_narrow_sets.py; description and task list in sets/narrow/README.md.
+role: dev
+tasks: {math: 32}
+sources: {math: ["gsm8k"]}
+select: {math: {"meta.calc_steps": [4, 5, 6, 7, 8, 9]}}
+rewards: {low: 1, high: 5, seed: 7100}
+seed: 7100
+exclude_ids_file: sets/narrow/exclude_ids.txt
+narrow:
+  type: math
+  subgenre: gsm_chain
+  title: "Grade-school word problems with long arithmetic chains (4-9 steps)"
+  description: "GSM8K problems whose reference solution has 4+ calculation steps: a long chain where one slip ruins the answer; cheap in tokens, accuracy decided by step-by-step reasoning and the check."
+  target_cells: ["solvers/math", "verifier/math", "recheck/math", "predictor/math"]
+  unanswerable_share: 0
+  reserve_seed: 8100
+  reserve: sets/narrow/manifest.json
+frozen:
+  set_hash: "b256cf1cedc3"
+  n_tasks: 32
+  n_unanswerable: 0
+  by_type: {"math": 32}

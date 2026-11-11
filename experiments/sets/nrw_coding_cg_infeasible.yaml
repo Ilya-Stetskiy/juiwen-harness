@@ -1,0 +1,24 @@
+# Narrow set nrw_coding_cg_infeasible: Repair tasks with an impossible half (codegen_fix, contradictory test)
+# Frozen by `lab.py sets freeze` (hash below); built by tools/make_narrow_sets.py; description and task list in sets/narrow/README.md.
+role: dev
+tasks: {coding: 30}
+sources: {coding: ["codegen_fix"]}
+select: {coding: {"meta.n_bugs": [2], "meta.pool": ["main"], "meta.n_functions": [3, 4, 5]}}
+unanswerable: {coding: 15}
+rewards: {low: 1, high: 5, seed: 7123}
+seed: 7123
+exclude_ids_file: sets/narrow/exclude_ids.txt
+narrow:
+  type: coding
+  subgenre: cg_infeasible
+  title: "Repair tasks with an impossible half (codegen_fix, contradictory test)"
+  description: "15 of 30 tasks cannot be solved (a second test with the same input and another expected value); success is recognising that and not burning budget; the 50% share is deliberate (competition: about 15-25%). The feasible half has two bugs."
+  target_cells: ["guess/coding", "verifier/coding", "budget/coding", "guard/coding"]
+  unanswerable_share: 0.5
+  reserve_seed: 8123
+  reserve: sets/narrow/manifest.json
+frozen:
+  set_hash: "223520ee47f0"
+  n_tasks: 30
+  n_unanswerable: 15
+  by_type: {"coding": 30}

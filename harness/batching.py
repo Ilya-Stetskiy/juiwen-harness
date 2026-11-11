@@ -18,6 +18,9 @@ from __future__ import annotations
 import os
 import time
 
+import asyncio
+
+from . import guard
 from .answers import normalize, write_answer
 from .llm import CallContext, ask
 from .pipelines import clean_instruction, extract_code, run_python
@@ -98,8 +101,9 @@ async def maybe_batch(task, model, pred, sched, cfg, ledger, journal, state, wid
     t0 = time.time()
     ctx = CallContext(task, model, pred, cfg, ledger, journal)
     try:
-        answers = await solve_batch(ctx, [t for t, _ in group])
-    except Exception as exc:  # noqa: BLE001 - a broken batch call must not lose the tasks: all go to the single path
+        coro_b = solve_batch(ctx, [t for t, _ in group])
+        answers = await (asyncio.wait_for(coro_b, cfg.max_task_seconds) if cfg.limits_on else coro_b)   # R-X1: the batch has a time cap too
+    except Exception as exc:  # noqa: BLE001 - a broken batch call must not lose the tasks: all go to the single path (also a timeout)
         journal.event("batch_error", tasks=ids, error=type(exc).__name__, detail=str(exc)[:200])
         answers = {i: None for i in ids}
     share = (ledger.task_cost(task.task_id) - before) / len(group)
@@ -110,13 +114,14 @@ async def maybe_batch(task, model, pred, sched, cfg, ledger, journal, state, wid
         if ans is None and os.environ.get("HARNESS_BATCH_FALLBACK", "single") == "single":
             b2 = ledger.task_cost(t.task_id)
             try:
-                res = await run_task(t, model, p, cfg, ledger, journal)
+                coro_s = run_task(t, model, p, cfg, ledger, journal)
+                res = await (asyncio.wait_for(coro_s, cfg.max_task_seconds) if cfg.limits_on else coro_s)
                 status, ans = res.status, res.answer
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 (a timeout too)
                 journal.event("task_error", task=t.task_id, error=type(exc).__name__, detail=str(exc)[:200])
             cost += ledger.task_cost(t.task_id) - b2
         if status == "solved" and ans:
-            write_answer(t.dir, ans)
+            write_answer(t.dir, guard.scrub_answer(ans, t.task_id, journal))   # R-X1: the same rail as the single path
             state["solved"] += 1
         sched.report(t, model, cost)
         if status == "deferred":

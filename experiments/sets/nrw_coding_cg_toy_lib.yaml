@@ -1,0 +1,24 @@
+# Narrow set nrw_coding_cg_toy_lib: Repair of toy libraries like the organisers' example (codegen_fix, toy pool)
+# Frozen by `lab.py sets freeze` (hash below); built by tools/make_narrow_sets.py; description and task list in sets/narrow/README.md.
+role: dev
+tasks: {coding: 30}
+sources: {coding: ["codegen_fix"]}
+select: {coding: {"meta.pool": ["toy"], "meta.infeasible": ["False"]}}
+unanswerable: {coding: 0}
+rewards: {low: 1, high: 5, seed: 7121}
+seed: 7121
+exclude_ids_file: sets/narrow/exclude_ids.txt
+narrow:
+  type: coding
+  subgenre: cg_toy_lib
+  title: "Repair of toy libraries like the organisers' example (codegen_fix, toy pool)"
+  description: "Tasks built from the 42 hand-written toy functions in the style of the organisers' coding_0003 (about 20% of codegen_fix); small, similar to the real competition examples; tests solver prompts tuned to that style."
+  target_cells: ["solvers/coding", "executor/coding", "guard/coding"]
+  unanswerable_share: 0.0
+  reserve_seed: 8121
+  reserve: sets/narrow/manifest.json
+frozen:
+  set_hash: "842399eb826a"
+  n_tasks: 30
+  n_unanswerable: 0
+  by_type: {"coding": 30}

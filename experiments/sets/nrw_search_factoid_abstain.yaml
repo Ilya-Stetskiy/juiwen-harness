@@ -1,0 +1,24 @@
+# Narrow set nrw_search_factoid_abstain: Single-hop questions with unanswerable half (SQuAD v2)
+# Frozen by `lab.py sets freeze` (hash below); built by tools/make_narrow_sets.py; description and task list in sets/narrow/README.md.
+role: dev
+tasks: {search: 32}
+sources: {search: ["squad_v2"]}
+select: {search: {"task_id": {"re": "[5-9]$"}}}
+unanswerable: {search: 16}
+rewards: {low: 1, high: 5, seed: 7111}
+seed: 7111
+exclude_ids_file: sets/narrow/exclude_ids.txt
+narrow:
+  type: search
+  subgenre: factoid_abstain
+  title: "Single-hop questions with unanswerable half (SQuAD v2)"
+  description: "SQuAD v2 with 16 of 32 unanswerable (plausible-sounding question whose answer is not in the paragraph): the cleanest test of abstention, guess and the free verifier signals. The 50% share is deliberate (competition: about 15-25%)."
+  target_cells: ["guess/search", "verifier/search", "fallback/search"]
+  unanswerable_share: 0.5
+  reserve_seed: 8111
+  reserve: sets/narrow/manifest.json
+frozen:
+  set_hash: "394ea4a474d1"
+  n_tasks: 32
+  n_unanswerable: 16
+  by_type: {"search": 32}

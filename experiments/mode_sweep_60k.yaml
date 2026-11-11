@@ -1,0 +1,23 @@
+id: exp-mode-sweep-60k
+name: mode_sweep_60k
+author: human
+hypothesis: >
+  Calibration of HARNESS_RUN_MODE=auto at a less binding budget: baseline0, 60 000 tokens, two repeats, the three manual modes
+  and auto. For baseline0 the auto rule picks economy at every budget up to 100k (the p90 sum is 251k, 2.5-4x the budget), so
+  auto should equal economy here; if accuracy earns clearly more points at 60k, the p90 threshold is too strict.
+change: HARNESS_RUN_MODE=legacy|accuracy|economy|auto
+backend: gateway
+model: auto
+set: baseline0
+repeats: 2
+budget: 60000
+fallback: "on"
+arms:
+  legacy:
+    env: {HARNESS_RUN_MODE: legacy}
+  accuracy:
+    env: {HARNESS_RUN_MODE: accuracy}
+  economy:
+    env: {HARNESS_RUN_MODE: economy}
+  auto:
+    env: {HARNESS_RUN_MODE: auto}

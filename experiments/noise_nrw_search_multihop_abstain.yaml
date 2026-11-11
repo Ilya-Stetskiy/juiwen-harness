@@ -1,0 +1,14 @@
+name: noise_nrw_search_multihop_abstain
+hypothesis: >
+  Noise floor of the narrow set nrw_search_multihop_abstain (Two-hop questions with unanswerable half (MuSiQue), 30 tasks): the unchanged baseline harness (the as_is arm of baseline0:
+  model auto, fallback on) is run 3 times, so the standard deviation of points between
+  repeats of an unchanged harness is known for this set. A difference below it is never accepted on this set.
+  Budget 100000 does not bind (estimated tokens per run are far below it), so there is no truncation.
+backend: gateway
+model: auto
+set: nrw_search_multihop_abstain
+repeats: 3
+budget: 100000
+arms:
+  as_is:
+    env: {HARNESS_FALLBACK: "on"}

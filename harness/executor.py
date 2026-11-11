@@ -117,6 +117,8 @@ async def run_task(task: TaskInfo, model_name: str, pred: Prediction, cfg: Confi
         if res is not None:
             status, answer = res
             journal.event("pipeline_done", task=task.task_id, status=status)
+            if status == "solved":
+                _early(task, answer)   # in every mode: a cut of the run (hard cap) after this point must not lose the ready answer
             if status == "solved" and judge.mode() != "off":   # verifier: accept / recheck / unsolvable (S10)
                 try:
                     status, answer = await _verify_loop(ctx, pipeline, task, model_name, pred, cfg, ledger, journal, status, answer)
@@ -185,7 +187,8 @@ async def recheck_one(task, model_name, pred, cfg, ledger, journal, answer, p, e
             return None, c
         return (res[1] if res is not None and res[0] == "solved" else None), c
 
-    norm = lambda a: (a or "").strip().lower()
+    from .answers import normalize
+    norm = lambda a: normalize(task.check, a or "").strip().lower()   # R-X9: the same comparison as resolve_disagree
     if mode == "other":
         m2 = other_model(model_name)
         a2, c2 = await run(m2)
@@ -225,6 +228,17 @@ async def recheck_one(task, model_name, pred, cfg, ledger, journal, answer, p, e
     journal.event("verify_retry", task=task.task_id, action="recheck", model=m2, p_before=p, p_after=(v2 or {}).get("p"),
                   same_answer=same, taken=take and not same)
     return (a2, v2["p"], True) if take else (answer, p, False)
+
+
+EARLY_ANSWER = None   # callable(task, answer) set by run_agent: the first answer is on disk BEFORE verification / recheck starts
+
+
+def _early(task, answer) -> None:
+    if EARLY_ANSWER is not None and answer:
+        try:
+            EARLY_ANSWER(task, answer)
+        except Exception:  # noqa: BLE001 - never lose the run over a failed early write
+            pass
 
 
 async def resolve_disagree(ctx, task, model_name, pred, cfg, ledger, journal, answer, p):
@@ -278,6 +292,8 @@ async def _verify_loop(ctx, pipeline, task, model_name, pred, cfg, ledger, journ
     from . import judge
     from .llm import CallContext
 
+    if status == "solved":
+        _early(task, answer)   # a cut of the run during the verifier call / recheck must not lose the answer that is ready
     v = await judge.verify_answer(ctx, task, answer)
     if not v:
         return status, answer
@@ -310,6 +326,10 @@ async def _verify_loop(ctx, pipeline, task, model_name, pred, cfg, ledger, journ
     if judge.verdict(best_p) == "unsolvable":
         journal.event("verdict_unsolvable", task=task.task_id, p=best_p)
         if os.environ.get("HARNESS_SUBMIT_UNSOLVABLE", "on").strip().lower() == "off":
+            try:   # R-X10: the early write already put the answer on disk; "off" must remove it
+                (task.dir / "answer.txt").unlink()
+            except OSError:
+                pass
             return "unsolvable", None
     return status, answer
 
@@ -324,7 +344,8 @@ async def run_agent_task(task: TaskInfo, model_name: str, pred: Prediction, cfg:
     from openjiuwen.harness.factory import create_deep_agent
 
     from .censor import CensorRail
-    from .llm import effective_max_tokens
+    from .budget import BudgetStop
+    from .llm import effective_max_tokens, guarded
 
     t0 = time.time()
     profile = load_profile(task.task_type)
@@ -334,14 +355,16 @@ async def run_agent_task(task: TaskInfo, model_name: str, pred: Prediction, cfg:
     else:
         tmp_ws = tempfile.mkdtemp(prefix="ws_")
         ws = Path(tmp_ws)
-    try:
+    async def attempt() -> str:
+        mtok = effective_max_tokens(model_name, int(profile.get("max_tokens", 1500)))
+        if getattr(ledger, "cap", None) is not None:   # HARNESS_HARD_CAP: the reply may not run past the cap (the agent path too)
+            mtok = ledger.clamp_output(mtok, (len(task.instruction) + len(profile["system_prompt"])) / 4.0)
         model = Model(
             model_client_config=ModelClientConfig(
                 client_provider="OpenAI", api_key=cfg.api_key or "EMPTY", api_base=cfg.api_base,
                 timeout=180, verify_ssl=False,
             ),
-            model_config=ModelRequestConfig(
-                model=model_name, max_tokens=effective_max_tokens(model_name, int(profile.get("max_tokens", 1500)))),
+            model_config=ModelRequestConfig(model=model_name, max_tokens=mtok),
         )
         sysop = SysOperation(SysOperationCard(
             id=f"sysop_{task.task_id}", mode=OperationMode.LOCAL,
@@ -366,13 +389,22 @@ async def run_agent_task(task: TaskInfo, model_name: str, pred: Prediction, cfg:
         session = create_agent_session(session_id=f"s_{task.task_id}", card=card)
         await session.pre_run(inputs=query)
         out = await agent.invoke(query, session=session)
-        text = str(out.get("output", "")) if isinstance(out, dict) else str(out)
+        return str(out.get("output", "")) if isinstance(out, dict) else str(out)
+
+    try:
+        # the agent run goes through the same guard as every call: concurrency limit, 429 pause, hard cap
+        text = await guarded(ledger, journal, task.task_id, model_name, attempt)
         final = extract_final(text)
         if final is None:
             return ExecResult("failed", None, time.time() - t0)
         if final.strip().upper().startswith("UNSOLVABLE"):
             return ExecResult("unsolvable", None, time.time() - t0)
-        return ExecResult("solved", normalize(task.check, final), time.time() - t0)
+        ans = normalize(task.check, final)
+        _early(task, ans)
+        return ExecResult("solved", ans, time.time() - t0)
+    except BudgetStop as exc:   # the hard cap: no new call
+        journal.event("task_stopped", task=task.task_id, by="BudgetStop", detail=str(exc)[:120], stage="agent")
+        return ExecResult("failed", None, time.time() - t0)
     finally:
         if tmp_ws:
             shutil.rmtree(tmp_ws, ignore_errors=True)

@@ -1,0 +1,23 @@
+# Narrow set nrw_data_analysis_wtq_big_table: Questions on large tables, 40+ rows (WikiTableQuestions)
+# Frozen by `lab.py sets freeze` (hash below); built by tools/make_narrow_sets.py; description and task list in sets/narrow/README.md.
+role: dev
+tasks: {data_analysis: 24}
+sources: {data_analysis: ["wikitablequestions"]}
+select: {data_analysis: {"check": ["exact_str"], "instruction": {"re": "\\((?:[4-9]\\d|\\d{2,}\\d) rows\\)"}}}
+rewards: {low: 1, high: 5, seed: 7116}
+seed: 7116
+exclude_ids_file: sets/narrow/exclude_ids.txt
+narrow:
+  type: data_analysis
+  subgenre: wtq_big_table
+  title: "Questions on large tables, 40+ rows (WikiTableQuestions)"
+  description: "Tables of 40 and more rows: long prompt/workspace, more tokens per task and more variance; tests cost prediction from workspace size, the order, the budget and the tokenizer."
+  target_cells: ["predictor/data_analysis", "sorter/data_analysis", "budget/data_analysis", "tokenizer/data_analysis"]
+  unanswerable_share: 0
+  reserve_seed: 8116
+  reserve: sets/narrow/manifest.json
+frozen:
+  set_hash: "f69dac940e57"
+  n_tasks: 24
+  n_unanswerable: 0
+  by_type: {"data_analysis": 24}

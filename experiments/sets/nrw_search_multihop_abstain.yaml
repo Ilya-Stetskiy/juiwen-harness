@@ -1,0 +1,24 @@
+# Narrow set nrw_search_multihop_abstain: Two-hop questions with unanswerable half (MuSiQue)
+# Frozen by `lab.py sets freeze` (hash below); built by tools/make_narrow_sets.py; description and task list in sets/narrow/README.md.
+role: dev
+tasks: {search: 30}
+sources: {search: ["musique_full"]}
+select: {search: {"meta.hops": [2]}}
+unanswerable: {search: 15}
+rewards: {low: 1, high: 5, seed: 7109}
+seed: 7109
+exclude_ids_file: sets/narrow/exclude_ids.txt
+narrow:
+  type: search
+  subgenre: multihop_abstain
+  title: "Two-hop questions with unanswerable half (MuSiQue)"
+  description: "Two-hop MuSiQue questions, 15 of 30 unanswerable (the answerable twin has the same question; the unanswerable one has a paragraph removed): tests recognising a missing answer, guessing and verifier recheck. NOTE the 50% share is deliberate (the competition has about 15-25%) so the abstention behaviour has power."
+  target_cells: ["guess/search", "verifier/search", "recheck/search"]
+  unanswerable_share: 0.5
+  reserve_seed: 8109
+  reserve: sets/narrow/manifest.json
+frozen:
+  set_hash: "54c773a6ef94"
+  n_tasks: 30
+  n_unanswerable: 15
+  by_type: {"search": 30}

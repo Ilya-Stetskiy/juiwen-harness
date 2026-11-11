@@ -1,0 +1,24 @@
+# Narrow set nrw_coding_cg_single_bug: Repair a library with one bug (codegen_fix)
+# Frozen by `lab.py sets freeze` (hash below); built by tools/make_narrow_sets.py; description and task list in sets/narrow/README.md.
+role: dev
+tasks: {coding: 30}
+sources: {coding: ["codegen_fix"]}
+select: {coding: {"meta.n_bugs": [1], "meta.pool": ["main"], "meta.infeasible": ["False"]}}
+unanswerable: {coding: 0}
+rewards: {low: 1, high: 5, seed: 7119}
+seed: 7119
+exclude_ids_file: sets/narrow/exclude_ids.txt
+narrow:
+  type: coding
+  subgenre: cg_single_bug
+  title: "Repair a library with one bug (codegen_fix)"
+  description: "mylib.py of 3-8 functions with exactly one injected bug, tests per function; the cheapest repair task; tests locating a single fault."
+  target_cells: ["solvers/coding", "executor/coding", "sorter/coding", "predictor/coding"]
+  unanswerable_share: 0.0
+  reserve_seed: 8119
+  reserve: sets/narrow/manifest.json
+frozen:
+  set_hash: "dd545bc9f911"
+  n_tasks: 30
+  n_unanswerable: 0
+  by_type: {"coding": 30}

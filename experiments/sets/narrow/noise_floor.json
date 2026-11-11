@@ -1,0 +1,229 @@
+{
+ "note": "threshold = max(pooled sd between repeats of unchanged harness, 4% of max points per run); written by review R-K4",
+ "sets": {
+  "nrw_coding_cg_infeasible": {
+   "threshold_points": 3.52,
+   "sd_between_repeats": 3.46,
+   "max_points_per_run": 88,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_coding_cg_infeasible"
+   ]
+  },
+  "nrw_coding_cg_large_file": {
+   "threshold_points": 3.16,
+   "sd_between_repeats": 2.52,
+   "max_points_per_run": 79,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_coding_cg_large_file"
+   ]
+  },
+  "nrw_coding_cg_multi_bug": {
+   "threshold_points": 5.69,
+   "sd_between_repeats": 5.69,
+   "max_points_per_run": 66,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_coding_cg_multi_bug"
+   ]
+  },
+  "nrw_coding_cg_single_bug": {
+   "threshold_points": 3.68,
+   "sd_between_repeats": 0.0,
+   "max_points_per_run": 92,
+   "repeats_pooled": 2,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_coding_cg_single_bug"
+   ]
+  },
+  "nrw_data_analysis_dabench": {
+   "threshold_points": 9.24,
+   "sd_between_repeats": 9.24,
+   "max_points_per_run": 84,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_data_analysis_dabench"
+   ]
+  },
+  "nrw_data_analysis_tabfact": {
+   "threshold_points": 3.46,
+   "sd_between_repeats": 3.46,
+   "max_points_per_run": 85,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_data_analysis_tabfact"
+   ]
+  },
+  "nrw_data_analysis_wtq_aggregate": {
+   "threshold_points": 3.36,
+   "sd_between_repeats": 3.06,
+   "max_points_per_run": 84,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_data_analysis_wtq_aggregate"
+   ]
+  },
+  "nrw_data_analysis_wtq_big_table": {
+   "threshold_points": 10.02,
+   "sd_between_repeats": 10.02,
+   "max_points_per_run": 92,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_data_analysis_wtq_big_table"
+   ]
+  },
+  "nrw_data_analysis_wtq_list": {
+   "threshold_points": 3.08,
+   "sd_between_repeats": 1.53,
+   "max_points_per_run": 77,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_data_analysis_wtq_list"
+   ]
+  },
+  "nrw_data_analysis_wtq_lookup": {
+   "threshold_points": 13.0,
+   "sd_between_repeats": 13.0,
+   "max_points_per_run": 93,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_data_analysis_wtq_lookup"
+   ]
+  },
+  "nrw_math_algebra": {
+   "threshold_points": 3.96,
+   "sd_between_repeats": 3.61,
+   "max_points_per_run": 99,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_math_algebra"
+   ]
+  },
+  "nrw_math_discrete": {
+   "threshold_points": 3.36,
+   "sd_between_repeats": 2.52,
+   "max_points_per_run": 84,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_math_discrete"
+   ]
+  },
+  "nrw_math_geometry": {
+   "threshold_points": 3.0,
+   "sd_between_repeats": 0.0,
+   "max_points_per_run": 75,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_math_geometry"
+   ]
+  },
+  "nrw_math_gsm_chain": {
+   "threshold_points": 4.04,
+   "sd_between_repeats": 4.04,
+   "max_points_per_run": 94,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_math_gsm_chain"
+   ]
+  },
+  "nrw_math_hard_symbolic": {
+   "threshold_points": 15.0,
+   "sd_between_repeats": 15.0,
+   "max_points_per_run": 82,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_math_hard_symbolic"
+   ]
+  },
+  "nrw_math_word_simple": {
+   "threshold_points": 3.88,
+   "sd_between_repeats": 0.0,
+   "max_points_per_run": 97,
+   "repeats_pooled": 6,
+   "status": "2 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_math_word_simple",
+    "noise_nrw_math_word_simple"
+   ]
+  },
+  "nrw_search_bridge": {
+   "threshold_points": 4.4,
+   "sd_between_repeats": 4.4,
+   "max_points_per_run": 89,
+   "repeats_pooled": 6,
+   "status": "2 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_search_bridge",
+    "noise_nrw_search_bridge"
+   ]
+  },
+  "nrw_search_comparison": {
+   "threshold_points": 3.72,
+   "sd_between_repeats": 0.82,
+   "max_points_per_run": 93,
+   "repeats_pooled": 6,
+   "status": "2 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_search_comparison",
+    "noise_nrw_search_comparison"
+   ]
+  },
+  "nrw_search_factoid": {
+   "threshold_points": 3.44,
+   "sd_between_repeats": 3.19,
+   "max_points_per_run": 86,
+   "repeats_pooled": 6,
+   "status": "2 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_search_factoid",
+    "noise_nrw_search_factoid"
+   ]
+  },
+  "nrw_search_factoid_abstain": {
+   "threshold_points": 6.66,
+   "sd_between_repeats": 6.66,
+   "max_points_per_run": 101,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_search_factoid_abstain"
+   ]
+  },
+  "nrw_search_multihop_abstain": {
+   "threshold_points": 5.51,
+   "sd_between_repeats": 5.51,
+   "max_points_per_run": 76,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_search_multihop_abstain"
+   ]
+  },
+  "nrw_search_multihop_deep": {
+   "threshold_points": 3.88,
+   "sd_between_repeats": 2.31,
+   "max_points_per_run": 97,
+   "repeats_pooled": 3,
+   "status": "1 noise run(s), pooled variance, floor 4% of max points",
+   "sources": [
+    "noise_local_nrw_search_multihop_deep"
+   ]
+  }
+ }
+}

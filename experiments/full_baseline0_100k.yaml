@@ -1,0 +1,19 @@
+id: exp-full-baseline0-100k
+name: full_baseline0_100k
+author: human
+hypothesis: >
+  Full-budget check at 100 000 on baseline0: legacy vs economy vs accuracy, three repeats. Is there any condition where accuracy (verify other) wins?
+change: HARNESS_RUN_MODE=legacy|economy|accuracy
+backend: gateway
+model: auto
+set: baseline0
+repeats: 3
+budget: 100000
+fallback: "on"
+arms:
+  legacy:
+    env: {HARNESS_RUN_MODE: legacy}
+  economy:
+    env: {HARNESS_RUN_MODE: economy}
+  accuracy:
+    env: {HARNESS_RUN_MODE: accuracy}

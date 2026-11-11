@@ -1,0 +1,9 @@
+# Mode "economy": the same points for fewer tokens. Order of tasks by reward per token (greedy sorter), no verification or rechecks.
+env:
+  HARNESS_PREDICTOR: gbm         # budget_gbm_30k at 30k: +24.5 [-1; +51] (clarify), 87-90 tasks finished against 70-76
+  HARNESS_SORTER: greedy         # reward * p / tokens (default; the only measured sorter)
+  HARNESS_BATCH_SIZE: "8"        # ab_batch8_auto_30k: +27.5 [+11.5; +45] (accept) at 30k, tokens -17%
+  HARNESS_BATCH_PROMPT: compute
+  HARNESS_BATCH_TYPES: math
+  HARNESS_TOKENIZER: "on"
+  HARNESS_VERIFY: "off"          # no verifier, no recheck

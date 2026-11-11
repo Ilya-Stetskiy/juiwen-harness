@@ -17,6 +17,10 @@ Measured facts:
 - The judge on search is useless (AUC 0.5-0.6); after the change of defaults it is off on search.
 - The gateway's weekly and 3-hour limits count REQUESTS (1 000 000 per week), not tokens; tokens matter for the competition metric only.
 
+- Predictor switch HARNESS_PREDICTOR=gbm (deployed in 34ad2c8, model profiles/cost_model.json): gradient-boosted trees on task features before solving, gives tokens p10/p50/p90 instead of one number. Default stays placeholder; use gbm as an arm against placeholder.
+- Measured at budget 30k: gbm vs placeholder +24.5 points, 95% CI [-1.0, +51.0], verdict clarify (not accepted: the interval touches zero, one run is not enough).
+- The harness overshoots the budget by 15-50% (HARNESS_BUDGET_HARD=off, the organizers only truncate the output); 97-99% of the points are earned inside the budget, so the overshoot is nearly free in points but not in tokens.
+
 Open questions (candidates for hypotheses):
 - Does a different task order (reward-first, cheapest-first, type-aware, predictor `measured`/`flat`) beat greedy at budgets 20-40k on the real harness, not only in the simulator?
 - Which cheap mode gives the most points per token: noreason models on all types or only on math/search, batching of math (4/8) with `compute`, fallback `late` vs `on` vs `off` for coding, censor on tokens?

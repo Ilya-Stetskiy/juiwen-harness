@@ -6,6 +6,7 @@ counting every call by the competition formula.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 
 from .config import Config
@@ -86,18 +87,141 @@ async def _ask_once(ctx: CallContext, system: str, user: str, max_tokens: int, t
     from . import budget, limits, rpm
 
     limits.check(ctx)                                   # HARNESS_CENSOR=log|enforce
+    if getattr(ctx.ledger, "capped", False):            # HARNESS_HARD_CAP=on: the API-reported cost has reached the budget
+        raise budget.BudgetStop("hard cap reached")
+    from . import tokcount
+    ptoks = tokcount.chat_prompt_tokens(system, user, ctx.model) if tokcount.enabled() and budget.enabled() else None
     est = budget.reserve(ctx, len(system) + len(user), effective_max_tokens(ctx.model, max_tokens),
-                         recheck=bool(ctx.extra.get("recheck")))   # HARNESS_BUDGET_HARD=on
+                         recheck=bool(ctx.extra.get("recheck")), prompt_tokens=ptoks)   # HARNESS_BUDGET_HARD=on
     before = ctx.ledger.task_cost(ctx.task.task_id)
     await rpm.acquire(ctx.journal, ctx.task.task_id)    # HARNESS_RPM_LIMIT>0 waits for a free request slot
+    state = "cancelled"   # R-X6: "ok" after a reply, "failed" after an exception; anything else means the call was cancelled
+    reply_len = 0
     try:
-        return await _raw_call(ctx, system, user, max_tokens, temperature)
+        out = await _call_with_retry(ctx, system, user, max_tokens, temperature, before)
+        state, reply_len = "ok", len(out)
+        return out
     except Exception as exc:  # noqa: BLE001
+        state = "failed"
         if rpm.is_429(exc):
             ctx.journal.event("rate_429", task=ctx.task.task_id, model=ctx.model, in_last_minute=rpm.count_last_minute())
         raise
     finally:
+        if state != "failed" and ctx.ledger.task_cost(ctx.task.task_id) == before and os.environ.get("HARNESS_LEDGER_ESTIMATE", "on").strip().lower() != "off":
+            # R-X6: the proxy bills this call but the ledger saw no usage (usage missing, or the call was cancelled by the task
+            # timeout): book an estimate so the budget is not silently under-counted. Reply length is unknown after a cancel:
+            # assume half of max_tokens.
+            in_tok = ptoks if ptoks is not None else (tokcount.chat_prompt_tokens(system, user, ctx.model) if tokcount.exact() else (len(system) + len(user)) / 4.0)
+            out_tok = reply_len / 4.0 if state == "ok" else effective_max_tokens(ctx.model, max_tokens) / 2.0
+            c = ctx.ledger.add(ctx.task.task_id, int(in_tok), int(out_tok))
+            ctx.journal.event("ledger_estimate", task=ctx.task.task_id, model=ctx.model, reason=state, cost=round(c, 1))
         budget.release(est, ctx.ledger.task_cost(ctx.task.task_id) - before)
+
+
+_SERIAL = None
+_LIMITER = None
+_COOLDOWN_UNTIL = 0.0
+
+
+def _serial_gate():
+    """One lock for the whole run (created inside the running loop)."""
+    import asyncio
+    global _SERIAL
+    if _SERIAL is None:
+        _SERIAL = asyncio.Lock()
+    return _SERIAL
+
+
+def _limiter():
+    """HARNESS_MAX_CONCURRENT (default 3, 0 = unlimited): the gateway limits concurrent requests per key and answers 429 "retry in 60 s";
+    the lab proxy kept this at 3. Applies to every LLM call, also the agent path."""
+    import asyncio
+    import contextlib
+    global _LIMITER
+    n = _env_int("HARNESS_MAX_CONCURRENT", 3)
+    if n <= 0:
+        return contextlib.nullcontext()
+    if _LIMITER is None:
+        _LIMITER = asyncio.Semaphore(n)
+    return _LIMITER
+
+
+_TRANSIENT = re.compile(r"\b(429|500|502|503|504)\b|ratelimit|rate limit|overloaded|connection (refused|reset|error)|connecterror", re.IGNORECASE)
+_RETRY_AFTER = re.compile(r"(\d{1,3})\s*(?:с\b|сек|s\b|sec)", re.IGNORECASE)
+
+
+def _transient(exc: BaseException) -> bool:
+    """Not a timeout: a call that timed out on our side may still be generated and billed by the proxy, a repeat would pay twice."""
+    return bool(_TRANSIENT.search(type(exc).__name__ + " " + str(exc)))
+
+
+def _retry_after(exc: BaseException) -> float:
+    """Seconds the gateway asks to wait ("Повторите через 60 с"); 60 when the text has no number, at most 120."""
+    m = _RETRY_AFTER.search(str(exc))
+    return float(min(int(m.group(1)), 120)) if m else 60.0
+
+
+async def guarded(ledger, journal, task_id: str, model: str, factory):
+    """Every LLM call (the scripted calls and the whole agent run) goes through here:
+      * hard cap (HARNESS_HARD_CAP): no new call after the cap, and past HARNESS_HARD_CAP_SERIAL x cap one call at a time;
+      * at most HARNESS_MAX_CONCURRENT calls at once (the gateway's per-key limit);
+      * a transient failure (429, 5xx, connection) with nothing billed for the task is repeated: 5xx / connection HARNESS_RETRIES
+        times (default 2, pause 2 s, 4 s), 429 HARNESS_RETRIES_429 times (default 4) after the pause the gateway asks for (60 s by default),
+        and the pause is shared: while a 429 cooldown runs no call starts. Timeouts are not repeated (the proxy may have billed them).
+    `factory` is a coroutine function that makes ONE attempt (a fresh model/agent/session)."""
+    import asyncio
+    import time
+
+    global _COOLDOWN_UNTIL
+    from . import budget, rpm
+
+    before = ledger.task_cost(task_id)
+    tries = max(_env_int("HARNESS_RETRIES", 2), 0)
+    tries429 = max(_env_int("HARNESS_RETRIES_429", 4), 0)
+    attempt = 0
+    while True:
+        delay = _COOLDOWN_UNTIL - time.monotonic()
+        if delay > 0:
+            await asyncio.sleep(delay)
+        try:
+            async with _limiter():
+                if getattr(ledger, "capped", False):
+                    raise budget.BudgetStop("hard cap reached")
+                gate = None
+                if ledger.serial_needed():
+                    gate = _serial_gate()
+                    await gate.acquire()
+                    if ledger.capped:
+                        gate.release()
+                        raise budget.BudgetStop("hard cap reached")
+                    journal.event("cap_serial", task=task_id, model=model, spent=round(ledger.spent(), 1))
+                ledger.active += 1
+                try:
+                    return await factory()
+                finally:
+                    ledger.active = max(ledger.active - 1, 0)
+                    if gate is not None:
+                        gate.release()
+        except budget.BudgetStop:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            rate = rpm.is_429(exc)
+            limit = tries429 if rate else tries
+            if attempt >= limit or not _transient(exc) or ledger.task_cost(task_id) != before:
+                raise
+            wait = _retry_after(exc) if rate else 2.0 * (2 ** attempt)
+            if rate:
+                _COOLDOWN_UNTIL = max(_COOLDOWN_UNTIL, time.monotonic() + wait)
+            journal.event("call_retry", task=task_id, model=model, attempt=attempt + 1, wait=wait, rate_limit=rate,
+                          error=type(exc).__name__, detail=str(exc)[:120])
+            attempt += 1
+            if not rate:
+                await asyncio.sleep(wait)
+
+
+async def _call_with_retry(ctx, system, user, max_tokens, temperature, before):
+    return await guarded(ctx.ledger, ctx.journal, ctx.task.task_id, ctx.model,
+                         lambda: _raw_call(ctx, system, user, max_tokens, temperature))
 
 
 async def _raw_call(ctx: CallContext, system: str, user: str, max_tokens: int, temperature: float | None = None) -> str:
@@ -111,13 +235,20 @@ async def _raw_call(ctx: CallContext, system: str, user: str, max_tokens: int, t
 
     ctx.n_calls += 1
     cid = f"llm_{ctx.task.task_id}_{ctx.n_calls}"
+    mtok = effective_max_tokens(ctx.model, max_tokens)
+    clamped = False
+    if getattr(ctx.ledger, "cap", None) is not None:     # HARNESS_HARD_CAP=on: the reply may not run past the cap
+        from . import tokcount
+        mtok2 = ctx.ledger.clamp_output(mtok, (len(system) + len(user)) / 4.0)
+        clamped, mtok = mtok2 < mtok, mtok2
+        if clamped:
+            ctx.journal.event("cap_clamp", task=ctx.task.task_id, model=ctx.model, max_tokens=mtok)
     model = Model(
         model_client_config=ModelClientConfig(
             client_provider="OpenAI", api_key=ctx.cfg.api_key or "EMPTY", api_base=ctx.cfg.api_base,
             timeout=180, verify_ssl=False,
         ),
-        model_config=ModelRequestConfig(model=ctx.model, max_tokens=effective_max_tokens(ctx.model, max_tokens),
-                                        **_sampling(temperature)),
+        model_config=ModelRequestConfig(model=ctx.model, max_tokens=mtok, **_sampling(temperature)),
     )
     card = AgentCard(id=cid, name=cid, description="single call")
     agent = create_deep_agent(

@@ -1,0 +1,24 @@
+id: exp-rebuild-mixed100_dev-30k
+name: rebuild_mixed100_dev_30k
+author: human
+hypothesis: >
+  Check after the review rebuild (REVIEW_FULL.md): current economy against economy with the measured p_success (R-X5), with
+  fallback=late (R-K6), and with everything the review added (expected-cost planning R-X4, worker wait R-X3). Judged by points
+  INSIDE the budget (lab.py R-K2), three repeats, Bonferroni over three comparisons, threshold of the set.
+change: HARNESS_PSUCCESS, HARNESS_FALLBACK, HARNESS_COST_BASIS, HARNESS_WORKER_WAIT on top of HARNESS_RUN_MODE=economy
+backend: gateway
+model: auto
+set: mixed100_dev
+repeats: 3
+budget: 30000
+fallback: "on"
+priority: 5
+arms:
+  economy:
+    env: {HARNESS_RUN_MODE: economy, HARNESS_SANDBOX: scrub}
+  eco_psuccess:
+    env: {HARNESS_RUN_MODE: economy, HARNESS_SANDBOX: scrub, HARNESS_PSUCCESS: measured}
+  eco_ps_late:
+    env: {HARNESS_RUN_MODE: economy, HARNESS_SANDBOX: scrub, HARNESS_PSUCCESS: measured, HARNESS_FALLBACK: late}
+  eco_all:
+    env: {HARNESS_RUN_MODE: economy, HARNESS_SANDBOX: scrub, HARNESS_PSUCCESS: measured, HARNESS_FALLBACK: late, HARNESS_COST_BASIS: mean, HARNESS_WORKER_WAIT: "on"}
