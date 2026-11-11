@@ -10,7 +10,7 @@
 - Работа (1-3): 2
 - Приоритет: 6.6
 - Проверено: 2026-11-11
-- Эксперименты: budget_gbm_30k, ab_measured_predictor_30k, budget_sweep, baseline0, ab_gbm_vs_placeholder_mixed_30k
+- Эксперименты: budget_gbm_30k, ab_measured_predictor_30k, budget_sweep, baseline0, ab_gbm_vs_placeholder_mixed_30k, ab_gbm_vs_placeholder_baseline0_20k
 - Потенциал роста [accuracy]: medium
 - Прирост [accuracy] (очки/прогон): 33.0
 - Достоверность [accuracy]: 0.4
@@ -51,8 +51,9 @@ harness-gap.md §K3, §K4; AUTOLAB_REPORT.md §9.2; SCRIPTS.md §7.2
 | 2026-11-09 | budget_gbm_30k | предиктор placeholder против gbm (HARNESS_PREDICTOR) | baseline0 · 30k | 2 | очки placeholder 201,5 (37 331 ток.) против gbm 226,0 (39 886); +24,5 [-1,0; +51,0], нижняя граница у нуля; завершено задач в пределах 30k: gbm 87 и 90, placeholder 70 и 76 (порядок задач дешевле) | clarify | человек/подсессия (автор в манифесте: human) | нет (HARNESS_PREDICTOR=gbm по умолчанию выключен, commit 76f58f1) | results/budget_gbm_30k/report.md | accuracy |
 | 2026-11-09 | predictor_study_k3 | таблица placeholder против измеренных медиан, линейной, GBM, GBM+энкодер | стрим 19 972 строки (4 854 задачи × модели), кросс-проверка по задачам, оффлайн | нет данных | медиана APE: placeholder 0,778; gbm 0,273 (+source и награда 0,246; +энкодер 0,263); по типам gbm: math 0,51, search 0,04, data_analysis 0,49, coding 0,24; порядок задач (доля награды при 30% бюджета): 0,506 -> 0,688 (оракул 0,838); покрытие p10-p90 0,75 при цели 0,80; открытые датасеты | accept | нет данных | нет (HARNESS_PREDICTOR=gbm, commit 76f58f1) | harness-gap.md §K3; tools/predictor_study.py | accuracy |
 | 2026-11-11 | ab_gbm_vs_placeholder_mixed_30k | placeholder: HARNESS_PREDICTOR=placeholder; gbm: HARNESS_PREDICTOR=gbm | mixed100_dev · 30000 | 2 | placeholder очки 191.5, токены 35395 (эталон); gbm очки 218.0, токены 32348, разность +33.0 [10.5; 57.5]; порог 10.0 · режим: accuracy · решение: принята | accept | автолаборатория | да (переключатели, без кода) | нет данных | accuracy |
-| 2026-11-11 | ab_gbm_vs_placeholder_baseline0_20k | placeholder: HARNESS_PREDICTOR=placeholder; gbm: HARNESS_PREDICTOR=gbm | baseline0 · 20000 | 2 | в очереди, ожидается около 224 запросов шлюза · режим: accuracy | не завершён | автолаборатория | нет | нет данных | accuracy |
+| 2026-11-11 | ab_gbm_vs_placeholder_baseline0_20k | placeholder: HARNESS_PREDICTOR=placeholder; gbm: HARNESS_PREDICTOR=gbm | baseline0 · 20000 | 2 | placeholder очки 147.5, токены 23797 (эталон); gbm очки 186.0, токены 25156, разность +48.0 [20.5; 77.0]; порог 10.0 · режим: accuracy · решение: принята | accept | автолаборатория | нет | нет данных | accuracy |
 
 ## История
 - 2026-11-10 | создано | первичная инвентаризация, статус explored-headroom | автор: status-session
 - 2026-11-11 | gain: 24.5 → 33.0; experiments: +ab_gbm_vs_placeholder_mixed_30k | evidence: ab_gbm_vs_placeholder_mixed_30k: арм gbm +33.0 [10.5, 57.5] очков/прогон против порога 10.0, 2 повт., набор mixed100_dev, вердикт accept | автор: autolab
+- 2026-11-11 | experiments: +ab_gbm_vs_placeholder_baseline0_20k | evidence: ab_gbm_vs_placeholder_baseline0_20k: арм gbm +48.0 [20.5, 77.0] очков/прогон против порога 10.0, 2 повт., набор baseline0, вердикт accept | автор: autolab

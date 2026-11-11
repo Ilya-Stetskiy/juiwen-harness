@@ -37,7 +37,7 @@
 |---|---|---|---|---|---|---|
 | 1 | batcher/math | explored-headroom | 27.5 | 0.6 | 1 | 16.5 |
 | 2 | predictor/_all | explored-headroom | 33.0 | 0.4 | 2 | 6.6 |
-| 3 | sorter/_all | works-unexplored | 9.0 | 0.15 | 1 | 1.35 |
+| 3 | sorter/_all | explored-headroom | 9.0 | 0.4 | 1 | 3.6 |
 | 4 | fallback/_all | explored-headroom | 3.7 | 0.3 | 1 | 1.11 |
 | 5 | recheck/_all | explored-headroom | 1.0 | 0.2 | 2 | 0.1 |
 
@@ -47,7 +47,7 @@
 |---|---|---|---|---|---|---|
 | 1 | batcher/math | explored-headroom | 27.5 | 0.6 | 1 | 16.5 |
 | 2 | predictor/_all | explored-headroom | 33.0 | 0.4 | 2 | 6.6 |
-| 3 | sorter/_all | works-unexplored | 9.0 | 0.15 | 1 | 1.35 |
+| 3 | sorter/_all | explored-headroom | 9.0 | 0.4 | 1 | 3.6 |
 | 4 | fallback/_all | explored-headroom | 3.7 | 0.3 | 1 | 1.11 |
 | 5 | recheck/_all | explored-headroom | 1.0 | 0.2 | 2 | 0.1 |
 

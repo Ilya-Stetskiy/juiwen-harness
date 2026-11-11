@@ -657,7 +657,8 @@
     "ab_measured_predictor_30k",
     "budget_sweep",
     "baseline0",
-    "ab_gbm_vs_placeholder_mixed_30k"
+    "ab_gbm_vs_placeholder_mixed_30k",
+    "ab_gbm_vs_placeholder_baseline0_20k"
    ],
    "checked": "2026-11-11",
    "file": "blocks/predictor/_all.md",
@@ -665,7 +666,7 @@
    "journal": {
     "count": 5,
     "last": "ab_gbm_vs_placeholder_baseline0_20k",
-    "last_verdict": "не завершён",
+    "last_verdict": "accept",
     "last_date": "2026-11-11",
     "by_mode": {
      "accuracy": 4,
@@ -866,24 +867,25 @@
   {
    "block": "sorter",
    "type": "_all",
-   "status": "works-unexplored",
+   "status": "explored-headroom",
    "applicable": true,
    "headroom": "low",
    "gain_pts": 9.0,
-   "confidence": 0.15,
+   "confidence": 0.4,
    "work": 1,
-   "priority": 1.35,
+   "priority": 3.6,
    "experiments": [
     "ab_test_cheapfirst",
-    "budget_gbm_30k"
+    "budget_gbm_30k",
+    "ab_gbm_vs_placeholder_baseline0_20k"
    ],
-   "checked": "2026-11-10",
+   "checked": "2026-11-11",
    "file": "blocks/sorter/_all.md",
    "next_step": "`ab_test_cheapfirst` с 3 повторами на 30k (около 600 запросов).",
    "journal": {
     "count": 6,
     "last": "ab_gbm_vs_placeholder_baseline0_20k",
-    "last_verdict": "не завершён",
+    "last_verdict": "accept",
     "last_date": "2026-11-11",
     "by_mode": {
      "accuracy": 3,
@@ -896,13 +898,13 @@
     "accuracy": {
      "headroom": "low",
      "gain": 9.0,
-     "confidence": 0.15,
-     "priority": 1.35
+     "confidence": 0.4,
+     "priority": 3.6
     },
     "economy": {
      "headroom": "unknown",
      "gain": null,
-     "confidence": 0.15,
+     "confidence": 0.4,
      "priority": null
     }
    }
