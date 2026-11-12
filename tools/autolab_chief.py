@@ -636,7 +636,8 @@ def stack_housekeeping(dry: bool) -> list[str]:
         stt = _arm_stats(chk["name"], "stack")
         mean = stt[1].get("mean", 0) if stt else 0
         v = ver.get("stack")
-        good = state == "done" and v in ("accept", "clarify") and mean > 0
+        thr = float((stt[1].get("threshold") if stt else 0) or 0)
+        good = state == "done" and v in ("accept", "clarify") and mean > -0.5 * thr      # the net under the loose accept: the stack must not be worse than main by more than half the noise threshold
         chk.update(state="passed" if good else "failed", mean=mean, verdict=v or state)
         if good:
             st["checked_n"] = len(st.get("ops", []))

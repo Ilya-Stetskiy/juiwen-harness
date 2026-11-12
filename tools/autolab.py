@@ -84,6 +84,10 @@ LIMITS_DEFAULT = {
     "chief_max_active": 3,             # hypotheses holding task types at once (the chief proposes no more while this many are active)
     "chief_max_rechecks": 3,           # checks on other data + repeats per hypothesis
     "chief_min_gap_min": 25,           # minimum minutes between two ticks (cron runs every 30)
+    "chief_stack_set": "mixed100_dev",    # the set of the whole-stack check and of the leave-one-out ablation (was: the first set by name, adversarial14 with 14 tasks; a key that is not here is ignored by limits_cfg)
+    "chief_stack_budget": 100000,         # its budget: the final scale (100 tasks, 100k)
+    "chief_stack_repeats": 2,
+    "chief_stack_check_every": 2,         # a whole-stack check after this many additions
     "chief_max_tokens": 6000,          # output tokens of the chief's plan
     "claude_key_file": "~/.config/autolab/anthropic.key",   # the key of the claude roles: Anthropic (sk-ant-) or OpenRouter (sk-or-); the file name stays
     "claude_provider": "auto",         # auto: by the key prefix (sk-or- OpenRouter, else Anthropic) | anthropic | openrouter
@@ -2363,6 +2367,7 @@ def cmd_review(name: str, notify_to: list[str] | None = None) -> Path:
 def selftest() -> None:
     import tempfile
     global EXP, DRAFTS, USAGE
+    assert limits_cfg()["chief_stack_set"] == "mixed100_dev" and limits_cfg()["chief_stack_budget"] == 100000
     import tempfile as _tf
     _wt = Path(_tf.mkdtemp())
     (_wt / "harness").mkdir()
