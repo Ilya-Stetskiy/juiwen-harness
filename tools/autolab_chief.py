@@ -112,14 +112,44 @@ def add_idea(text: str, by="") -> int:
     return nid
 
 
-def resolve_idea(iid: int, verdict: str, why: str) -> bool:
+def resolve_idea(iid: int, verdict: str, why: str, hyps: list[str] | None = None) -> bool:
     items = _ideas()
     for i in items:
         if int(i.get("id", 0)) == iid:
             i["status"], i["answer"], i["resolved"] = verdict, " ".join(str(why).split())[:300], time.strftime("%Y-%m-%d %H:%M")
+            if hyps:
+                i["hyps"] = sorted(set(i.get("hyps", [])) | {al.family_base(h) for h in hyps})
             _save_ideas(items)
             return True
     return False
+
+
+def _hyp_finished(h: str) -> bool:
+    m = al.meta(h)
+    return bool(m.get("verdict") or m.get("result") or al.decision_of(h) or m.get("stage") == "apply_refused")
+
+
+def _hyp_result(h: str) -> str:
+    m = al.meta(h)
+    if m.get("stage") == "apply_refused":
+        return f"{h}: патч не применился ({str(m.get('apply_error') or '')[:80]})"
+    stt = _arm_stats(h)
+    ver = ",".join(str(v) for v in (m.get("verdict") or {}).values()) or "-"
+    return f"{h}: вердикт {ver}" + (f", {stt[1].get('mean', 0):+.1f} очков [CI {stt[1].get('ci95')}]" if stt else "") + (f", решение {al.DECISION_RU.get(al.decision_of(h), al.decision_of(h))}" if al.decision_of(h) else "")
+
+
+def refresh_ideas() -> None:
+    """A `taken` idea whose hypotheses all have a result becomes `done` with the numbers (the chief wrote the answer when it started it, the lab has the end)."""
+    items = _ideas()
+    changed = False
+    for i in items:
+        hy = i.get("hyps") or []
+        if i.get("status") == "taken" and hy and all(_hyp_finished(h) for h in hy):
+            i["status"], i["resolved"] = "done", time.strftime("%Y-%m-%d %H:%M")
+            i["answer"] = ("Закончено: " + "; ".join(_hyp_result(h) for h in hy))[:400]
+            changed = True
+    if changed:
+        _save_ideas(items)
 
 
 def open_ideas() -> list[dict]:
@@ -127,6 +157,7 @@ def open_ideas() -> list[dict]:
 
 
 def ideas_context() -> str:
+    refresh_ideas()
     items = _ideas()
     op = [i for i in items if i.get("status") in ("new", "later")]
     done = [i for i in items if i.get("status") not in ("new", "later")][-5:]
@@ -141,10 +172,11 @@ def ideas_context() -> str:
 
 
 def ideas_view() -> str:
+    refresh_ideas()
     items = _ideas()
     if not items:
         return "💡 Идей пока нет. Написать: `шеф идея <текст>`."
-    ru = {"new": "ждёт шефа", "later": "отложена", "taken": "в работе", "declined": "отклонена"}
+    ru = {"new": "ждёт шефа", "later": "отложена", "taken": "в работе", "declined": "отклонена", "done": "закончена"}
     return "💡 Идеи шефу:\n" + "\n".join(f"#{i['id']} [{ru.get(i.get('status'), i.get('status'))}] {i['text'][:200]}" + (f"\n   ↳ {i['answer']}" if i.get("answer") else "") for i in items[-12:])
 
 
@@ -1089,7 +1121,8 @@ def _execute(a: dict, dry: bool, st: dict, gate: tuple[bool, str]) -> str:
             nm_ = al.family_base(c._safe_name(a.get("name") or "") or "") if a.get("name") else ""
             if not ROUND_QUEUED and not (nm_ and (al.DRAFTS / f"{nm_}.yaml").exists()):
                 return f"refused: idea #{a['id']} cannot be `taken` while no hypothesis for it exists (no propose of this call was queued, no existing `name` given): use `later` and try again at the next tick"
-        resolve_idea(a["id"], a["verdict"], str(a.get("why") or ""))
+        hy = list(ROUND_QUEUED) + ([nm_] if a["verdict"] == "taken" and nm_ else []) if a["verdict"] == "taken" else []
+        resolve_idea(a["id"], a["verdict"], str(a.get("why") or ""), hy)
         return f"idea #{a['id']}: {a['verdict']}"
     if kind == "parallel":
         old = al.parallel_runs_now()
@@ -1820,6 +1853,20 @@ def selftest() -> None:
     ROUND_QUEUED.append("ab_x")
     assert execute({"action": "idea", "id": 1, "verdict": "taken", "why": "x"}, False, _state(), (True, "")) == "idea #1: taken"
     ROUND_QUEUED.clear()
+    resolve_idea(1, "later", "жду слот")
+    # a taken idea closes itself when its hypotheses have a result
+    _its = _ideas()
+    _its[0]["hyps"] = []
+    _save_ideas(_its)
+    ROUND_QUEUED.append("ab_x_idea")
+    al.write_draft(dict(d, name="ab_x_idea", target_cells=["blk/a"]))
+    al.set_meta("ab_x_idea", stage="queued", queued_at=time.time())
+    assert execute({"action": "idea", "id": 1, "verdict": "taken", "why": "x"}, False, _state(), (True, "")) == "idea #1: taken" and _ideas()[0]["hyps"] == ["ab_x_idea"]
+    ROUND_QUEUED.clear()
+    refresh_ideas()
+    assert _ideas()[0]["status"] == "taken" and "в работе" in ideas_view()
+    al.set_meta("ab_x_idea", stage="verdict", verdict={"arm": "reject"})
+    assert "закончена" in ideas_view() and "reject" in _ideas()[0]["answer"] and not open_ideas()
     resolve_idea(1, "later", "жду слот")
     sig1 = _world_sig()
     resolve_idea(1, "declined", "уже пробовали")
