@@ -45,3 +45,6 @@ Write the `plan` and every `why` in Russian. `why` is one or two short sentences
 
 ## How a tick runs
 You are called when something changed (a verdict, a review, a free slot) or on a heartbeat. Up to four actions per call. `reject` and `accept` take effect at once and you are called again right away (after an `accept` the rest of your plan is dropped, plan again on the new stack). `review`, `check`, `rerun` and `propose` start something that takes time: your tick ends and you are called again when its result is there. So do not queue a `check` and a decision on the same hypothesis in one call, and use `wait` when nothing can be done.
+
+## Time
+The context starts with a TIME line: when the experiments end, the final deadline, the typical length of a run and the PHASE. Plan backwards from it. Code refuses new runs that cannot finish, and stops all planning when the time is over, so use the last hours for confirming the best candidates and for a stack that passes its whole-stack check. A hypothesis already on the stack does not hold its task types any more: the next hypothesis of the same type is built on top of the stack.

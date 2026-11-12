@@ -546,7 +546,9 @@ def stack_housekeeping(dry: bool) -> list[str]:
         return out
     # 4. time for a check
     unchecked = len(st.get("ops", [])) - int(st.get("checked_n", 0))
-    if (not chk or chk.get("sig") != sig) and unchecked >= int(cfg.get("chief_stack_check_every", 2)):
+    lu = time_left_h()
+    closing = lu is not None and lu <= float(cfg.get("chief_final_check_h", 3)) and unchecked > 0
+    if (not chk or chk.get("sig") != sig) and (unchecked >= int(cfg.get("chief_stack_check_every", 2)) or closing):
         arms = {"main": {}, "stack": {"env": al.stack_env()}}
         if dry:
             say(f"стек: dry-run: поставил бы общий перепрогон стека против main ({len(_items(st))} гипотез)")
@@ -653,6 +655,64 @@ def auto_accept(name: str) -> tuple[bool, str]:
     return stack_add(name)
 
 
+# ------------------------------------------------------------------ time: the deadline of the experiments
+def _ts(text: str) -> float | None:
+    try:
+        return time.mktime(time.strptime(str(text).strip(), "%Y-%m-%d %H:%M"))
+    except (ValueError, TypeError):
+        return None
+
+
+def deadlines() -> tuple[float | None, float | None]:
+    cfg = al.limits_cfg()
+    return _ts(cfg.get("chief_experiments_until")), _ts(cfg.get("chief_final_deadline"))
+
+
+def median_run_min() -> float:
+    """Median minutes an experiment takes on this host (manifest -> cells of the last 25 results); 15 when there is no history."""
+    rows = []
+    for d in al.EXP.glob("results/*"):
+        m, f = d / "manifest.json", d / "cells.jsonl"
+        if m.exists() and f.exists():
+            rows.append((f.stat().st_mtime, (f.stat().st_mtime - m.stat().st_mtime) / 60))
+    xs = sorted(x for _, x in sorted(rows)[-25:] if 0.5 < x < 240)
+    return xs[len(xs) // 2] if xs else 15.0
+
+
+def time_left_h(which: int = 0) -> float | None:
+    t = deadlines()[which]
+    return None if t is None else (t - time.time()) / 3600
+
+
+def time_text() -> str:
+    until, final = deadlines()
+    if until is None:
+        return "TIME: no deadline is set (chief_experiments_until)."
+    med = median_run_min()
+    lu = (until - time.time()) / 3600
+    out = (f"TIME: the experiments end {time.strftime('%Y-%m-%d %H:%M', time.localtime(until))} host time ({lu:.1f} h left)"
+           + (f"; everything ends {time.strftime('%Y-%m-%d %H:%M', time.localtime(final))} ({(final - time.time()) / 3600:.1f} h left): the hours after the experiments are for the final runs on main and the hand-in" if final else "")
+           + f". An experiment takes about {med:.0f} min here (median of the last runs), the whole path of a hypothesis (verdict, review, a check on other data, a second budget) several hours with the queue. ")
+    if lu <= 0:
+        return out + "PHASE: over. Start nothing."
+    if lu <= float(al.limits_cfg().get("chief_final_check_h", 3)) + 1:
+        return out + "PHASE: closing. No new proposals; finish what is in flight, get the stack through a whole-stack check so the human can `принять стек`."
+    if lu <= 10:
+        return out + "PHASE: converging. Prefer confirming the best candidates (a check on other data, a second budget) and stacking them over new ideas."
+    return out + "PHASE: exploring. Keep the queue full; breadth is still worth it."
+
+
+def _time_refusal(kind: str) -> str:
+    """"" or why a new run is not started any more (not enough time to finish it before the experiments end)."""
+    lu = time_left_h()
+    if lu is None:
+        return ""
+    need = max(3 * median_run_min(), 20) / 60
+    if lu < need:
+        return f"not enough time: {max(lu, 0) * 60:.0f} min before the end of the experiments, a run takes about {median_run_min():.0f} min (need {need * 60:.0f})"
+    return ""
+
+
 # ------------------------------------------------------------------ the context of a tick
 def _read(p: Path, limit: int) -> str:
     try:
@@ -747,6 +807,7 @@ def build_context() -> str:
     root = al.status_root()
     st = _state()
     parts = [
+        time_text(),
         f"NOW {time.strftime('%Y-%m-%d %H:%M')} host time. goal_mode (focus) = {cfg.get('goal_mode') or 'alternate'}; dry_run = {cfg.get('chief_dry_run', True)}.",
         f"LIMITS: max_actions per tick {cfg['chief_max_actions']}; active hypotheses {len({al.family_base(v) for v in al.active_types().values()})}/{cfg['chief_max_active']}; "
         f"queue depth {al.queue_depth()}/{cfg['max_queue_depth']}; rechecks per hypothesis {cfg['chief_max_rechecks']}; Claude dollars today {al.day_usd():.2f}/{cfg['usd_per_day']}, "
@@ -834,6 +895,9 @@ def execute(a: dict, dry: bool, st: dict, gate: tuple[bool, str]) -> str:
         return "ok"
     name = al.family_base(c._safe_name(a.get("name") or "") or "") if a.get("name") else ""
     if kind in ("propose", "check", "rerun"):
+        tr = _time_refusal(kind)
+        if tr:
+            return "refused: " + tr
         if al.queue_depth() >= cfg["max_queue_depth"]:
             return f"refused: queue is full ({al.queue_depth()}/{cfg['max_queue_depth']})"
         if not gate[0] and not dry:
@@ -1030,6 +1094,18 @@ def cmd_chief(force: bool = False) -> str:
     dry = dry_run()
     st["last_tick"] = time.time()
     lines: list[str] = []
+    lu = time_left_h()
+    if lu is not None and lu <= 0:
+        for t in (stack_housekeeping(dry) if _items() else []):
+            lines.append("• " + t)
+        if st.get("over_notice") != "1":
+            st["over_notice"] = "1"
+            _say("🧭 Время экспериментов вышло: шеф ничего нового не запускает. " + ("Стек: " + str(len(_items())) + " гипотез. Принять: `принять стек` (если общая проверка пройдена), затем финальные прогоны на main." if _items() else "Стек пуст."))
+        if lines:
+            _say("🧭 Шеф · стек\n" + "\n".join(lines))
+        st["sig"] = _world_sig()
+        _save(st)
+        return "chief: the time of the experiments is over: nothing started"
     try:
         for t in stack_housekeeping(dry):
             lines.append("• " + t)
@@ -1431,6 +1507,30 @@ def selftest() -> None:
     assert al.day_usd() >= 10.0 and al.limits_cfg_orig()["usd_per_week"] == 50.0 and al.limits_cfg_orig()["usd_per_day"] == 10.0
     # the switch off and the STOP file
     al.USAGE.unlink()
+    # the deadline of the experiments: the phase in the context, no run that cannot finish, nothing at all after the end
+    fmt = lambda dt: time.strftime("%Y-%m-%d %H:%M", time.localtime(time.time() + dt))
+    assert "no deadline" in time_text()
+    cfg_over["chief_experiments_until"], cfg_over["chief_final_deadline"] = fmt(30 * 3600), fmt(34 * 3600)
+    assert "PHASE: exploring" in time_text() and "29." in time_text() or "30." in time_text()
+    cfg_over["chief_experiments_until"] = fmt(8 * 3600)
+    assert "PHASE: converging" in time_text()
+    cfg_over["chief_experiments_until"] = fmt(600)
+    assert "PHASE: closing" in time_text() and "TIME:" in build_context()
+    for kind_ in ("rerun", "check", "propose"):
+        assert "not enough time" in execute({"action": kind_, "name": "ab_two", "repeats": 2, "set": "dev_math", "cell": "blk/a", "why": "x", "idea": "i" * 30}, False, _state(), (True, "ok")), kind_
+    cfg_over["chief_experiments_until"] = fmt(-60)
+    calls.clear()
+    n_msg = len(list((c.CFG_DIR / "tg_outbox").glob("*.json")))
+    out = cmd_chief(force=True)
+    assert "over" in out and not calls and len(list((c.CFG_DIR / "tg_outbox").glob("*.json"))) == n_msg + 1, out         # no model, one notice
+    cmd_chief(force=True)
+    assert len(list((c.CFG_DIR / "tg_outbox").glob("*.json"))) == n_msg + 1
+    cfg_over["chief_experiments_until"] = cfg_over["chief_final_deadline"] = ""
+    # a hypothesis on the stack holds no task types
+    al.set_meta("ab_hold", stage="verdict", verdict={"b": "accept"}, target_cells=["blk/a"], queued_at=time.time())
+    assert al.hyp_active("ab_hold")
+    al.set_meta("ab_hold", in_stack=True)
+    assert not al.hyp_active("ab_hold")
     al.chief_flag().unlink()
     assert "off" in cmd_chief(force=True)
     al.chief_flag().write_text("on")

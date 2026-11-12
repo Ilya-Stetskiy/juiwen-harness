@@ -48,3 +48,6 @@ chief_digest_hour: 21            # hour of the daily digest (host time)
 chief_stack_check_every: 2        # accepts onto auto/stack between two whole-stack checks (the stack against main)
 chief_stack_set: ""              # set of the stack check (default: the first dev set); chief_stack_budget: 30000, chief_stack_repeats: 2
 goal_mode: accuracy              # focus of autopilot / cycle / ideas / chief: accuracy | economy | "" (alternate)
+chief_experiments_until: ""      # "2026-11-14 00:10" host time: after it the chief starts nothing new; the TIME line of its context shows the phase
+chief_final_deadline: ""         # the end of everything (final runs on main, hand-in); only informs the chief
+chief_final_check_h: 3           # this many hours before experiments_until a whole-stack check is forced

@@ -73,6 +73,9 @@ LIMITS_DEFAULT = {
     "claude_model_chief": "claude-opus-5-5",   # the chief (tools/autolab_chief.py): plans the next steps of the improvement trajectory
     "chief_dry_run": True,             # the chief plans and tells the chat but executes nothing until a human sets this to false
     "chief_max_actions": 4,            # actions per model call
+    "chief_experiments_until": "",     # "YYYY-MM-DD HH:MM" host time: after it the chief starts nothing new (the time of the experiments ends)
+    "chief_final_deadline": "",        # the end of everything (the final runs on main and the hand-in): only shown to the chief
+    "chief_final_check_h": 3,          # this many hours before experiments_until the chief forces a whole-stack check
     "chief_max_rounds": 3,             # model calls per tick: after a reject / accept (instant) it thinks again at once; a review / experiment ends the tick
     "chief_event_gap_min": 5,          # least minutes between two ticks (a verdict, a review or a free slot wakes the chief; cron every 5 minutes)
     "chief_max_active": 3,             # hypotheses holding task types at once (the chief proposes no more while this many are active)
@@ -1043,7 +1046,7 @@ def set_meta(name: str, **kw) -> None:
 def hyp_active(name: str) -> bool:
     """A hypothesis holds its task types from the moment it enters the queue until a human decides (accept, reject, postpone) or the lab verdict is
     `reject` (automatic). Hypotheses that finished before decisions existed do not hold anything."""
-    if decision_of(name) or meta(name).get("stack_exp"):      # a check of the stack holds no task types
+    if decision_of(name) or meta(name).get("stack_exp") or meta(name).get("in_stack"):      # a check of the stack and a hypothesis already on the stack hold no task types
         return False
     if any((EXP / "queue" / k / f"{name}.yaml").exists() for k in ("pending", "running")):
         return True
