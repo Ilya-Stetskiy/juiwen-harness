@@ -28,7 +28,7 @@ import autolab_ctl as c  # noqa: E402
 import autolab_status as astat  # noqa: E402
 
 UID = "chief"
-ACTIONS = ("propose", "check", "rerun", "review", "accept", "reject", "wait", "note", "parallel", "idea")
+ACTIONS = ("propose", "check", "rerun", "review", "accept", "reject", "wait", "note", "parallel", "idea", "priority")
 EXTRA_FORBIDDEN = ("Dockerfile", "harness/mode.py")                  # kept by the human on top of the autolab's own patch rules
 EXTRA_FORBIDDEN_PREFIX = ("profiles/mode_",)
 DECIDED = ("accepted", "rejected", "auto_rejected")
@@ -178,6 +178,14 @@ def ideas_view() -> str:
         return "💡 Идей пока нет. Написать: `шеф идея <текст>`."
     ru = {"new": "ждёт шефа", "later": "отложена", "taken": "в работе", "declined": "отклонена", "done": "закончена"}
     return "💡 Идеи шефу:\n" + "\n".join(f"#{i['id']} [{ru.get(i.get('status'), i.get('status'))}] {i['text'][:200]}" + (f"\n   ↳ {i['answer']}" if i.get("answer") else "") for i in items[-12:])
+
+
+def priority_file() -> Path:
+    return al.DRAFTS / "chief_priority.md"
+
+
+def priority_text(limit: int = 2500) -> str:
+    return _read(priority_file(), limit)
 
 
 QA_SYSTEM = ("You are the CHIEF of the harness autolab, now answering a direct question of the human. The context below is exactly what you know right now "
@@ -1023,6 +1031,8 @@ def build_context() -> str:
         "YOUR PLAN FROM THE PREVIOUS TICK (CHIEF_PLAN.md):\n" + (_read(plan_file(), 3500) or "(none yet: write it)"),
         "YOUR NOTES: " + (" | ".join(st["notes"]) or "(none)"),
         ideas_context(),
+        "YOUR PRIORITIES (written by you with the action `priority`; they steer what you propose and what you stop; rewrite them when the evidence changes; PRIORITY.md above is the older human-made rating):\n"
+        + (priority_text() or "(none yet: write them with the action `priority`)"),
     ]
     return "\n\n".join(parts)
 
@@ -1049,6 +1059,10 @@ def validate_action(a) -> str | None:
     kind = a["action"]
     if not str(a.get("why") or "").strip():
         return "every action needs a `why`"
+    if kind == "priority":
+        t_ = str(a.get("text") or "").strip()
+        if not 60 <= len(t_) <= 3000:
+            return "priority needs a `text` of 60..3000 characters"
     if kind == "idea":
         if not isinstance(a.get("id"), int) or not any(int(i.get("id", 0)) == a["id"] for i in _ideas()):
             return f"no idea #{a.get('id')}"
@@ -1114,9 +1128,23 @@ def _execute(a: dict, dry: bool, st: dict, gate: tuple[bool, str]) -> str:
         if kind == "note" and not dry:
             st["notes"].append(str(a.get("text") or a.get("why"))[:300])
         return "ok"
+    if kind == "priority":
+        if dry:
+            return "dry-run: would rewrite the priorities"
+        old_ = priority_text(100000)
+        al.DRAFTS.mkdir(parents=True, exist_ok=True)
+        priority_file().write_text(f"<!-- updated {time.strftime('%Y-%m-%d %H:%M')} by the chief -->\n" + str(a["text"]).strip() + "\n", encoding="utf-8")
+        if old_:
+            with open(al.DRAFTS / "chief_priority_history.md", "a", encoding="utf-8") as f:
+                f.write(f"\n\n=== replaced {time.strftime('%Y-%m-%d %H:%M')} ===\n{old_}")
+        ROUND_PRIO.append("1")
+        return "priorities rewritten"
     if kind == "idea":
         if dry:
             return f"dry-run: would mark idea #{a['id']} as {a['verdict']}"
+        if a["verdict"] == "taken" and ROUND_PRIO and not ROUND_QUEUED and not a.get("name"):    # an idea about the priorities themselves: the written priorities are the answer
+            resolve_idea(a["id"], "done", "Приоритеты переписаны шефом (`шеф приоритет`): " + str(a.get("why") or "")[:200])
+            return f"idea #{a['id']}: done (priorities written)"
         if a["verdict"] == "taken":
             nm_ = al.family_base(c._safe_name(a.get("name") or "") or "") if a.get("name") else ""
             if not ROUND_QUEUED and not (nm_ and (al.DRAFTS / f"{nm_}.yaml").exists()):
@@ -1215,7 +1243,7 @@ def _limit_stop(st: dict, why: str) -> str:
 
 
 ACTION_RU = {"parallel": ("⚙️", "Параллельность прогонов"), "propose": ("💡", "Предложить гипотезу"), "check": ("🔬", "Проверка на других данных"), "rerun": ("🔁", "Повтор"), "review": ("📝", "Ревью"),
-             "accept": ("✅", "В стек"), "reject": ("❌", "Отклонить"), "wait": ("⏳", "Ждать"), "note": ("🗒", "Заметка"), "idea": ("💡", "Идея человека")}
+             "accept": ("✅", "В стек"), "reject": ("❌", "Отклонить"), "wait": ("⏳", "Ждать"), "note": ("🗒", "Заметка"), "idea": ("💡", "Идея человека"), "priority": ("🎯", "Приоритеты")}
 RESULT_RU = ((r"^dry-run: would order a review of .*", "заказал бы ревью"),
              (r"^dry-run: would check \S+ on (\S+)( at (\d+))?", lambda m: f"поставил бы проверку на {m.group(1)}" + (f", бюджет {m.group(3)}" if m.group(3) else "")),
              (r"^dry-run: would rerun \S+ x(\d+)", lambda m: f"поставил бы повтор ×{m.group(1)}"), (r"^dry-run: would reject .*", "отклонил бы"), (r"^dry-run: would set parallel runs (\d+) -> (\d+)", lambda m: f"поставил бы параллельность {m.group(1)} → {m.group(2)}"),
@@ -1243,8 +1271,9 @@ def _fmt_action(n: int, desc: str, nm: str, why: str, res: str) -> str:
     return f"{n}. {icon} {label}" + (f"\n   {nm}" if nm else "") + f"\n   Почему: {_short(why)}\n   Итог: {_short(res, 220)}"
 
 
+ROUND_PRIO: list[str] = []       # the priorities written in the current round: the proof behind an idea about priorities marked `taken`
 ROUND_QUEUED: list[str] = []     # hypotheses queued by the `propose` actions of the current round: the proof behind an idea marked `taken`
-INSTANT = ("reject", "accept", "note", "wait", "idea")           # done at once: the next thought may follow in the same tick
+INSTANT = ("reject", "accept", "note", "wait", "idea", "priority")           # done at once: the next thought may follow in the same tick
 BLOCKING = ("propose", "check", "rerun", "review")        # something has to run (a review, an experiment): the result wakes the next tick
 
 
@@ -1281,6 +1310,7 @@ def _round(st: dict, dry: bool, gate: tuple[bool, str], lines: list[str]) -> tup
         return "chief: the answer was not a JSON plan: nothing done", None, 0, False, False
     done, blocking, replan = 0, False, False
     ROUND_QUEUED.clear()
+    ROUND_PRIO.clear()
     acts = plan["actions"][: int(cfg["chief_max_actions"])]
     acts = [a for a in acts if not (isinstance(a, dict) and a.get("action") == "idea")] + [a for a in acts if isinstance(a, dict) and a.get("action") == "idea"]   # the answers to ideas come last: they depend on what was queued
     for a in acts:
@@ -1296,7 +1326,7 @@ def _round(st: dict, dry: bool, gate: tuple[bool, str], lines: list[str]) -> tup
                 res = f"failed: {type(ex).__name__}: {al.scrub(str(ex))[:200]}"
         okres = not err and not res.startswith(("refused", "invalid", "failed"))
         kind = a.get("action") if isinstance(a, dict) else "?"
-        if okres and not dry and kind not in ("wait", "note", "idea"):
+        if okres and not dry and kind not in ("wait", "note", "idea", "priority"):
             done += 1
             if kind in BLOCKING:
                 blocking = True
@@ -1392,7 +1422,7 @@ def status_text() -> str:
             f"Лимиты: действий за тик {cfg['chief_max_actions']}, активных гипотез {cfg['chief_max_active']}, перепроверок на гипотезу {cfg['chief_max_rechecks']}.\n"
             f"Стек: {len(_items())} гипотез (`стек`).\n"
             "Последние действия:\n" + ("\n".join(f"• {r['ts']} {r['action']} {r['name']} → {r['result']}" + (" [dry]" if r.get("dry") else "") for r in last) or "• нет")
-            + "\nКоманды: шеф вкл (спросит подтверждение), шеф выкл, шеф план, шеф дайджест, шеф идея <текст>, шеф идеи, шеф вопрос <текст>")
+            + "\nКоманды: шеф вкл (спросит подтверждение), шеф выкл, шеф план, шеф дайджест, шеф приоритет, шеф идея <текст>, шеф идеи, шеф вопрос <текст>")
 
 
 def plan_text() -> str:
@@ -1853,6 +1883,16 @@ def selftest() -> None:
     ROUND_QUEUED.append("ab_x")
     assert execute({"action": "idea", "id": 1, "verdict": "taken", "why": "x"}, False, _state(), (True, "")) == "idea #1: taken"
     ROUND_QUEUED.clear()
+    resolve_idea(1, "later", "жду слот")
+    # priorities written by the chief
+    assert "YOUR PRIORITIES" in build_context() and validate_action({"action": "priority", "text": "коротко", "why": "x"}) and not priority_text()
+    ptxt = "1. Не повторять noreason и censor/coding без новой причины. 2. Довести cheapfirst и noreason@30k до 5 повторов. 3. Искать в search и DA."
+    assert validate_action({"action": "priority", "text": ptxt, "why": "x"}) is None
+    assert execute({"action": "priority", "text": ptxt, "why": "x"}, True, _state(), (True, "")).startswith("dry-run") and not priority_text()
+    assert execute({"action": "priority", "text": ptxt, "why": "x"}, False, _state(), (True, "")) == "priorities rewritten" and "Довести cheapfirst" in build_context()
+    assert execute({"action": "priority", "text": ptxt + " 4. Параллельность 4.", "why": "x"}, False, _state(), (True, "")) == "priorities rewritten" and "Довести cheapfirst" in (al.DRAFTS / "chief_priority_history.md").read_text(encoding="utf-8")
+    assert execute({"action": "idea", "id": 1, "verdict": "taken", "why": "приоритеты"}, False, _state(), (True, "")).startswith("idea #1: done") and _ideas()[0]["status"] == "done"
+    ROUND_PRIO.clear()
     resolve_idea(1, "later", "жду слот")
     # a taken idea closes itself when its hypotheses have a result
     _its = _ideas()
