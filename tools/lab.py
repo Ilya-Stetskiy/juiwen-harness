@@ -39,7 +39,9 @@ import signal
 import statistics
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -119,6 +121,7 @@ def load_experiment(path: Path, allow_holdout: bool = False) -> dict:
     e.setdefault("fallback", "off")
     e.setdefault("workers", 5)
     e.setdefault("rpm", 55)
+    e.setdefault("parallel_runs", 1)       # runs (arm x repeat) of this experiment at once; 1 = one after another (autolab sets more)
     e.setdefault("seed", 1000)
     e.setdefault("week_guard", None)   # None: the experiment threshold of dispatcher.yaml (exp_week_stop_pct), else 600000
     e.setdefault("max_infra_frac", 0.10)
@@ -235,8 +238,16 @@ def _source_of(row: dict, pool: list[str]) -> str:
 
 
 # ------------------------------------------------------------------ gateway / infrastructure checks
+_INFRA_LOCK = threading.RLock()
+
+
 def check_infrastructure(e: dict) -> str:
-    """Returns the base URL of the backend or raises Abort with the reason."""
+    """Returns the base URL of the backend or raises Abort with the reason (one thread at a time: it may start the proxy)."""
+    with _INFRA_LOCK:
+        return _check_infrastructure(e)
+
+
+def _check_infrastructure(e: dict) -> str:
     if e["backend"] == "local":
         if not sr.shim_ready():
             raise Abort("local backend selected but llama-server (:8011) or the shim (:18444) is not reachable")
@@ -868,11 +879,14 @@ def run_experiment(path: Path, dry: bool, allow_holdout: bool = False) -> tuple[
         for rep, a in plan:
             say(f"  would run arm {a} repeat {rep}: env {e['arms'][a].get('env')}")
         return "dry", ""
-    try:
-        for rep, a in plan:
-            base_url = check_infrastructure(e)
-            t0 = time.time()
-            rows = run_with_health(e, a, e["arms"][a], grading, base, base_url, rep)
+    wlock = threading.Lock()
+
+    def one_run(item):
+        rep, a = item
+        base_url = check_infrastructure(e)
+        t0 = time.time()
+        rows = run_with_health(e, a, e["arms"][a], grading, base, base_url, rep)
+        with wlock:
             with open(cells_path, "a") as f:
                 for r in rows:
                     f.write(json.dumps(r) + "\n")
@@ -882,6 +896,9 @@ def run_experiment(path: Path, dry: bool, allow_holdout: bool = False) -> tuple[
             nv = sum(not r["infra"] for r in rows)
             say(f"  {a} #{rep}: {ok}/{nv} correct, {sum(r['hybrid_cost'] for r in rows):.0f} tokens, "
                 f"{time.time() - t0:.0f}s")
+
+    try:
+        run_plan(plan, one_run, 1 if e.get("adversarial") else int(e.get("parallel_runs") or 1))
     except Abort as ex:
         say(f"ABORTED: {ex}")
         (d / "ABORTED.txt").write_text(str(ex) + "\n", encoding="utf-8")
@@ -894,6 +911,37 @@ def run_experiment(path: Path, dry: bool, allow_holdout: bool = False) -> tuple[
     shutil.rmtree(WORK / name, ignore_errors=True)
     print(rep_text)
     return "ok", ""
+
+
+def run_plan(plan: list, worker, parallel: int) -> None:
+    """Run `worker(item)` for every item of the plan: one after another, or `parallel` at a time. The first Abort stops what has not started yet, waits for
+    what is running (its results are written) and is raised; the order of the finished runs in the files may differ, nothing reads it."""
+    if parallel <= 1 or len(plan) <= 1:
+        for item in plan:
+            worker(item)
+        return
+    stop = threading.Event()
+
+    def guarded(item):
+        if stop.is_set():
+            return None
+        try:
+            return worker(item)
+        except BaseException:
+            stop.set()
+            raise
+    with ThreadPoolExecutor(max_workers=parallel) as pool:
+        futs = [pool.submit(guarded, it) for it in plan]
+        errs = []
+        for f in futs:
+            try:
+                f.result()
+            except Abort as ex:
+                errs.append(ex)
+            except BaseException as ex:  # noqa: BLE001
+                errs.append(ex)
+    if errs:
+        raise errs[0]
 
 
 # ------------------------------------------------------------------ noise floor, acceptance threshold, predictor error
@@ -1373,7 +1421,35 @@ def selftest() -> None:
     assert list(a) == list(b) and len(a) == 10, "task set must be reproducible"
     shutil.rmtree(WORK / "selftest_a")
     shutil.rmtree(WORK / "selftest_b")
-    print("selftest ok:", "bootstrap detects shift and ignores noise;", "task set reproducible:", list(a)[:3], "...")
+    # parallel runs: all items done, at most `parallel` at once, the first Abort stops the rest
+    done, live, peak, lk = [], [0], [0], threading.Lock()
+
+    def w(item):
+        with lk:
+            live[0] += 1
+            peak[0] = max(peak[0], live[0])
+        time.sleep(0.05)
+        with lk:
+            live[0] -= 1
+            done.append(item)
+    run_plan(list(range(8)), w, 3)
+    assert sorted(done) == list(range(8)) and peak[0] == 3, (done, peak)
+    done.clear()
+    run_plan(list(range(4)), w, 1)
+    assert done == [0, 1, 2, 3]
+
+    def boom(item):
+        if item == 1:
+            raise Abort("stop")
+        time.sleep(0.05)
+        done.append(item)
+    done.clear()
+    try:
+        run_plan(list(range(30)), boom, 3)
+        raise AssertionError("no Abort")
+    except Abort:
+        assert len(done) < 29, done
+    print("selftest ok:", "parallel runs;", "bootstrap detects shift and ignores noise;", "task set reproducible:", list(a)[:3], "...")
 
 
 def _stub_infra(e: dict) -> str:

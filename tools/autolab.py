@@ -72,6 +72,7 @@ LIMITS_DEFAULT = {
     "usd_per_run": 5.0, "usd_per_day": 10.0, "usd_per_week": 50.0,   # Claude dollars of everything the autolab calls (the chief included): per process run, per local day, per ISO week
     "claude_model_chief": "claude-opus-5-5",   # the chief (tools/autolab_chief.py): plans the next steps of the improvement trajectory
     "chief_dry_run": True,             # the chief plans and tells the chat but executes nothing until a human sets this to false
+    "exp_parallel_runs": 3,            # runs (arm x repeat) of one experiment at once (lab.py parallel_runs); the gateway proxy caps at rpm 55
     "chief_max_actions": 4,            # actions per model call
     "chief_experiments_until": "",     # "YYYY-MM-DD HH:MM" host time: after it the chief starts nothing new (the time of the experiments ends)
     "chief_final_deadline": "",        # the end of everything (the final runs on main and the hand-in): only shown to the chief
@@ -1501,6 +1502,7 @@ def cmd_submit(name: str) -> None:
     lim = limits_cfg()
     if queue_depth() >= lim["max_queue_depth"]:
         raise SystemExit(f"queue has {queue_depth()} experiments (max_queue_depth={lim['max_queue_depth']})")
+    e.setdefault("parallel_runs", int(lim.get("exp_parallel_runs") or 1))
     est = exp_requests_estimate(e)
     if est > lim["max_expected_requests_cycle"]:
         raise SystemExit(f"estimated {est} gateway requests (max_expected_requests_cycle={lim['max_expected_requests_cycle']})")
