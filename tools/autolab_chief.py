@@ -267,6 +267,37 @@ def rechecks(base: str) -> int:
     return sum(1 for n in family(b) if n != b)
 
 
+def _strong_clarify(base: str) -> tuple[bool, str]:
+    """A dev `clarify` that still earns an accept: the first experiment has a mean difference >= the threshold and an interval that is almost above zero
+    (lower bound >= -half the threshold), at least one repeat of it exists, no experiment of the family says reject, and the (lower) MEDIAN of the mean
+    differences of the first experiment and its repeats is positive. The whole stack check against main is the net under this looser rule."""
+    first = _arm_stats(base)
+    if not first:
+        return False, "no measured difference yet"
+    arm, d = first
+    thr = float(d.get("threshold") or 0)
+    lo = (d.get("ci95") or [None])[0]
+    if (al.meta(base).get("verdict") or {}).get(arm) not in ("clarify", "accept"):
+        return False, f"the verdict of arm {arm} is not clarify"
+    if d.get("mean", 0) < thr or lo is None or lo < -0.5 * thr:
+        return False, f"the first experiment is not strong enough (mean {d.get('mean', 0):+.1f}, lower bound {lo}, threshold {thr})"
+    reps = [n for n in family(base) if n != base and al.family_base(n) == base and re.search(r"_r\d+(_\d+)?$", n) and al.meta(n).get("check_of") != base]      # repeats (`_rN`), not checks on other data (`_fresh`)
+    means = [d.get("mean", 0)]
+    for n in reps:
+        cv = al.meta(n).get("verdict") or {}
+        cs = _arm_stats(n, arm)
+        if cv.get(arm) == "reject":
+            return False, f"the repeat {n} says reject"
+        if cs and cv.get(arm):
+            means.append(cs[1].get("mean", 0))
+    if len(means) < 2:
+        return False, "no finished repeat to confirm it (`rerun`)"
+    med = sorted(means)[(len(means) - 1) // 2]
+    if med <= 0:
+        return False, f"the median of the differences of the first run and its repeats is not positive ({', '.join(f'{x:+.1f}' for x in means)})"
+    return True, f"strong clarify confirmed: differences {', '.join(f'{x:+.1f}' for x in means)}, median {med:+.1f}"
+
+
 # ------------------------------------------------------------------ the acceptance policy (code, not prompt)
 def accept_policy(name: str) -> tuple[bool, list[str]]:
     """(ok, reasons the accept to `auto/<name>` is refused). The model may recommend; this decides."""
@@ -295,48 +326,24 @@ def accept_policy(name: str) -> tuple[bool, list[str]]:
         why.append("the experiments of this hypothesis have pipeline errors (the patch crashes on tasks): the numbers are not evidence")
     ver = m.get("verdict") or {}
     arms = [a for a, v in ver.items() if v == "accept"]
-    if not arms:
-        why.append("the lab verdict on the dev set is not accept (for a binding budget this is the in-budget verdict)")
-    st = _arm_stats(base, arms[0] if arms else None)
-    if arms and not (st and st[1].get("mean", 0) > 0):
-        why.append("the accepted arm has no positive measured difference")
-    # (2) a check on a fresh or narrow set
     chk = [n for n in checks_of(base) if al.meta(n).get("verdict")]
-    good_chk = False
-    for n in chk:
-        cv = al.meta(n).get("verdict") or {}
-        a = arms[0] if arms and arms[0] in cv else (next(iter(cv)) if cv else None)
-        cs = _arm_stats(n, a)
-        if a is None or cs is None:
-            continue
-        if cv.get(a) == "reject":
+    for n in chk:                                   # a check the chief ordered itself: a reject stops it
+        if "reject" in (al.meta(n).get("verdict") or {}).values():
             why.append(f"the check {n} on {_set_of(n)} says reject")
-        elif cs[1].get("mean", 0) > 0 and _set_of(n) != _set_of(base):
-            good_chk = True
-    if not good_chk:
-        why.append("no check on a fresh or narrow set with a verdict that is not reject and a positive difference (`check`)")
-    # (3) a second budget without a loss beyond the threshold
-    b0 = _budget(base)
-    second = False
-    for n in [base] + chk:
-        bn = _budget(n)
-        if b0 and bn and abs(bn - b0) / b0 >= 0.2 and al.meta(n).get("verdict"):
-            cv = al.meta(n).get("verdict") or {}
-            a = arms[0] if arms and arms[0] in cv else (next(iter(cv)) if cv else None)
-            cs = _arm_stats(n, a)
-            if cs and cv.get(a) != "reject" and cs[1].get("mean", 0) >= -float(cs[1].get("threshold") or 0):
-                second = True
-    if not second:
-        why.append(f"no second budget (at least 20% away from {b0}) without a loss beyond the threshold (`check` with `budget`)")
-    # (3b) the competition runs on the gateway Qwen: at least one run of the evidence is there
+    if arms:
+        st = _arm_stats(base, arms[0])
+        if not (st and st[1].get("mean", 0) > 0):
+            why.append("the accepted arm has no positive measured difference")
+    else:
+        ok_s, msg_s = _strong_clarify(base)
+        if not ok_s:
+            why.append("the lab verdict on the dev set is not accept (for a binding budget this is the in-budget verdict) and it is not a confirmed strong clarify: " + msg_s)
+    # the competition runs on the gateway Qwen: at least one run of the evidence is there
     backs = {al.meta(n).get("backend") or "gateway" for n in [base] + chk}
     if "gateway" not in backs:
         why.append("all the evidence ran on the local Qwen: confirm it on the gateway (`check` with backend gateway)")
-    # (4) the reviewer
-    rec = m.get("review_recommendation")
-    if not rec or rec == "не указана":
-        why.append("no review yet (`review`)")
-    elif rec == "отклонить":
+    # a review is optional, but a reject of one that exists stands
+    if al.meta(base).get("review_recommendation") == "отклонить":
         why.append("the reviewer recommends reject")
     # (6) the patch and the cells: the accept preflight of the human flow plus the files the human keeps
     info = None
@@ -834,13 +841,13 @@ def time_text() -> str:
     lu = (until - time.time()) / 3600
     out = (f"TIME: the experiments end {time.strftime('%Y-%m-%d %H:%M', time.localtime(until))} host time ({lu:.1f} h left)"
            + (f"; everything ends {time.strftime('%Y-%m-%d %H:%M', time.localtime(final))} ({(final - time.time()) / 3600:.1f} h left): the hours after the experiments are for the final runs on main and the hand-in" if final else "")
-           + f". An experiment takes about {med:.0f} min here (median of the last runs), the whole path of a hypothesis (verdict, review, a check on other data, a second budget) several hours with the queue. ")
+           + f". An experiment takes about {med:.0f} min here (median of the last runs), the path of a hypothesis (verdict, then accept; a review, a check on other data and a second budget are optional) one to several hours with the queue. ")
     if lu <= 0:
         return out + "PHASE: over. Start nothing."
     if lu <= float(al.limits_cfg().get("chief_final_check_h", 3)) + 1:
         return out + "PHASE: closing. No new proposals; finish what is in flight, get the stack through a whole-stack check so the human can `принять стек`."
     if lu <= 10:
-        return out + "PHASE: converging. Prefer confirming the best candidates (a check on other data, a second budget) and stacking them over new ideas."
+        return out + "PHASE: converging. Prefer confirming the best candidates (repeats of strong clarifies, a check on other data) and stacking them over new ideas."
     return out + "PHASE: exploring. Keep the queue full; breadth is still worth it."
 
 
@@ -1483,25 +1490,21 @@ def selftest() -> None:
             "plan": [{"cell": "blk/a", "evidence": "ab_win: accept", "experiments": "ab_win", "date": "2026-11-11", "mode": "accuracy"}]}
     c.accept_preflight = lambda name, against="HEAD": (dict(info), "")
     ok, why = accept_policy("ab_win")
-    assert not ok and any("no check on a fresh or narrow set" in w for w in why) and any("second budget" in w for w in why), why      # no check on other data -> refused
+    assert ok, why                    # the dev accept and the review are enough: no check on other data, no second budget are required
 
-    # a check on another set at the same budget: still no second budget
     def add_check(name, ds, budget, verdict, mean, thr=7.0):
         al.write_draft(dict(d, name=name, set=ds, budget=budget))
         al.set_meta(name, stage="verdict", check_of="ab_win", verdict={"b": verdict}, result=res_ok(mean, thr))
     add_check("ab_win_fresh", "dev_math", 30000, "clarify", 3.0)
-    ok, why = accept_policy("ab_win")
-    assert not ok and not any("no check on a fresh" in w for w in why) and any("second budget" in w for w in why), why
+    assert accept_policy("ab_win")[0]
     # a check that says reject refuses
     add_check("ab_win_fresh2", "dev_math", 30000, "reject", -9.0)
     ok, why = accept_policy("ab_win")
-    assert any("says reject" in w for w in why), why
-    # reject check replaced by a good second budget
+    assert not ok and any("says reject" in w for w in why), why
     for f in ("ab_win_fresh2.yaml", "ab_win_fresh2.meta.json"):
         (al.DRAFTS / f).unlink()
-    add_check("ab_win_fresh3", "dev_math", 50000, "clarify", -2.0, 7.0)      # loss within the threshold counts as "no loss beyond"
-    ok, why = accept_policy("ab_win")
-    assert ok, why
+    add_check("ab_win_fresh3", "dev_math", 50000, "clarify", -2.0, 7.0)
+    assert accept_policy("ab_win")[0]
     # all the evidence on the local Qwen: refused until some run was on the gateway
     for n_ in ("ab_win", "ab_win_fresh", "ab_win_fresh3"):
         al.set_meta(n_, backend="local")
@@ -1510,11 +1513,11 @@ def selftest() -> None:
     assert accept_policy("ab_win")[0]
     for n_ in ("ab_win", "ab_win_fresh", "ab_win_fresh3"):
         al.set_meta(n_, backend=None)
-    # (4) the reviewer, (5) stale, (6) forbidden files
+    # the reviewer: a reject stands, no review is fine; stale; forbidden files
     al.set_meta("ab_win", review_recommendation="отклонить")
     assert any("recommends reject" in w for w in accept_policy("ab_win")[1])
     al.set_meta("ab_win", review_recommendation=None)
-    assert any("no review yet" in w for w in accept_policy("ab_win")[1])
+    assert accept_policy("ab_win")[0]
     al.set_meta("ab_win", review_recommendation="принять", stale=True)
     assert any("stale" in w for w in accept_policy("ab_win")[1])
     al.set_meta("ab_win", stale=False)
@@ -1526,10 +1529,34 @@ def selftest() -> None:
     c.accept_preflight = lambda name, against="HEAD": (None, "the patch breaks the autolab rules: touches files outside the allowed set")
     assert any("breaks the autolab rules" in w for w in accept_policy("ab_win")[1])        # the lab's own patch check (check_patch) is part of the policy
     c.accept_preflight = lambda name, against="HEAD": (dict(info), "")
-    # a verdict that is not accept on the dev set
-    al.set_meta("ab_win", verdict={"b": "clarify"})
-    assert any("not accept" in w for w in accept_policy("ab_win")[1])
-    al.set_meta("ab_win", verdict={"b": "accept"})
+    # a dev verdict that is not accept: a weak clarify is refused
+    al.set_meta("ab_win", verdict={"b": "clarify"}, result=res_ok(4.0, 7.0))
+    assert any("not a confirmed strong clarify" in w for w in accept_policy("ab_win")[1])
+    # a strong clarify (mean >= threshold, lower bound >= -thr/2) needs a finished repeat, and the median of the differences must be positive
+    al.set_meta("ab_win", verdict={"b": "clarify"}, result={"a": {}, "b": {"points_diff_vs_first": {"mean": 12.0, "ci95": [-3.0, 27.0], "threshold": 7.0}}})
+    ok, why = accept_policy("ab_win")
+    assert not ok and any("no finished repeat" in w for w in why), why
+
+    def add_rep(name, verdict, mean):
+        al.write_draft(dict(d, name=name))
+        al.set_meta(name, stage="verdict", verdict={"b": verdict}, result={"a": {}, "b": {"points_diff_vs_first": {"mean": mean, "ci95": [mean - 9, mean + 9], "threshold": 7.0}}})
+    add_rep("ab_win_r3", "clarify", 5.0)
+    ok, why = accept_policy("ab_win")
+    assert ok, why                                                    # [12, 5]: the lower median 5 is positive
+    al.set_meta("ab_win_r3", result={"a": {}, "b": {"points_diff_vs_first": {"mean": -3.0, "ci95": [-12.0, 6.0], "threshold": 7.0}}})
+    ok, why = accept_policy("ab_win")
+    assert not ok and any("median" in w for w in why), why           # [12, -3]: the lower median is negative
+    add_rep("ab_win_r4", "clarify", 4.0)
+    ok, why = accept_policy("ab_win")
+    assert ok, why                                                    # [12, -3, 4]: the median 4 is positive
+    al.set_meta("ab_win_r4", verdict={"b": "reject"})
+    assert any("repeat ab_win_r4 says reject" in w for w in accept_policy("ab_win")[1])
+    for n_ in ("ab_win_r3", "ab_win_r4"):
+        for f in (f"{n_}.yaml", f"{n_}.meta.json"):
+            (al.DRAFTS / f).unlink()
+    al.set_meta("ab_win", verdict={"b": "clarify"}, result=res_ok(12.0))
+    assert any("not a confirmed" in w for w in accept_policy("ab_win")[1])       # the lower bound 1.0 .. is fine but no repeat
+    al.set_meta("ab_win", verdict={"b": "accept"}, result=res_ok(12.0))
 
     # auto accept: a branch on a local bare "GitHub", never master
     bare, seed = tmp / "bare.git", tmp / "seed"
@@ -1602,10 +1629,10 @@ def selftest() -> None:
     # live: a refused accept (no review) and a done accept; the queue and active limits
     subprocess.run(["git", "-C", str(bare), "branch", "-D", "auto/ab_win"], capture_output=True)
     cfg_over["chief_dry_run"] = False
-    al.set_meta("ab_win", review_recommendation=None)
+    al.set_meta("ab_win", review_recommendation="отклонить")
     fake["out"] = plan_act([{"action": "accept", "name": "ab_win", "why": "recommend"}])
     cmd_chief(force=True)
-    assert _state()["log"][-1]["result"].startswith("refused") and "no review yet" in _state()["log"][-1]["result"] and not al.meta("ab_win").get("auto_branch")
+    assert _state()["log"][-1]["result"].startswith("refused") and "recommends reject" in _state()["log"][-1]["result"] and not al.meta("ab_win").get("auto_branch")
     al.set_meta("ab_win", review_recommendation="принять")
     fake["out"] = plan_act([{"action": "accept", "name": "ab_win", "why": "all evidence is in"}])
     cmd_chief(force=True)
