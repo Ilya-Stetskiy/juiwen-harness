@@ -1323,6 +1323,28 @@ def stack_head() -> str:
     return r.stdout.strip()
 
 
+def shadowed_imports(src: str) -> set[str]:
+    """Names that a module imports at its top level AND defines (def / class / assignment) at its top level: the later definition hides the module
+    (`import math` plus `async def math(...)` in pipelines.py made every `math.log` raise AttributeError and no test noticed)."""
+    import ast
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return set()
+    imported: set[str] = set()
+    defined: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            imported.update((a.asname or a.name).split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imported.update(a.asname or a.name for a in node.names)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            defined.add(node.name)
+        elif isinstance(node, ast.Assign):
+            defined.update(t.id for t in node.targets if isinstance(t, ast.Name))
+    return imported & defined
+
+
 def cmd_apply(name: str, patch_file: str | None) -> None:
     m = meta(name)
     repo = repo_root()
@@ -1386,6 +1408,10 @@ def cmd_apply(name: str, patch_file: str | None) -> None:
                 c = subprocess.run([sys.executable, "-m", "py_compile", str(wt / n_)], capture_output=True, text=True)
                 if c.returncode:
                     abort(f"{n_} does not compile: {c.stderr[-300:]}")
+                old_src = g("show", f"HEAD:{n_}").stdout       # empty for a new file
+                new_hide = shadowed_imports((wt / n_).read_text(encoding="utf-8")) - shadowed_imports(old_src)
+                if new_hide:
+                    abort(f"{n_}: the import of {sorted(new_hide)} is hidden by a function/class/variable of the same name in this module (use `import X as _X`)")
         py = LAB / ".venv" / "bin" / "python"
         t = subprocess.run([str(py) if py.exists() else sys.executable, "tools/selftest_blocks.py"], cwd=str(wt), capture_output=True, text=True)
         if t.returncode:
@@ -2322,6 +2348,8 @@ def cmd_review(name: str, notify_to: list[str] | None = None) -> Path:
 def selftest() -> None:
     import tempfile
     global EXP, DRAFTS, USAGE
+    assert shadowed_imports("import math\nasync def math(ctx):\n    pass\n") == {"math"} and shadowed_imports("import math as _m\ndef math(c):\n    return _m.log(1)\n") == set()
+    assert shadowed_imports("from os import path\npath = 1\n") == {"path"} and shadowed_imports("import os\ndef f():\n    import math\n    return math\n") == set() and shadowed_imports("def (") == set()
     EXP = Path(tempfile.mkdtemp())
     DRAFTS = EXP / "autolab"
     USAGE = DRAFTS / "usage.jsonl"

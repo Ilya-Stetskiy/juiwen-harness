@@ -251,6 +251,8 @@ def accept_policy(name: str) -> tuple[bool, list[str]]:
                 why.append("measured before the stack existed: `rerun` it from scratch on the current stack")
     if m.get("stale"):
         why.append("the hypothesis is stale (another hypothesis of the same type was accepted after it): re-run it from scratch")
+    if _pipe_flag(base):
+        why.append("the experiments of this hypothesis have pipeline errors (the patch crashes on tasks): the numbers are not evidence")
     ver = m.get("verdict") or {}
     arms = [a for a, v in ver.items() if v == "accept"]
     if not arms:
@@ -869,6 +871,32 @@ def _l4() -> str:
     return "(harness-gap.md is not available on this host)"
 
 
+def pipeline_errors(name: str) -> dict[str, int]:
+    """`pipeline_error` events per arm in the journals of the experiment: a pipeline that raises on a task falls back to the agent, so a patch that
+    crashes on every task still produces numbers (tokens up, accuracy changed) that say nothing about the idea."""
+    out: dict[str, int] = {}
+    for f in sorted((al.EXP / "results" / name / "journals").glob("*.jsonl")):
+        arm = re.sub(r"_\d+$", "", f.stem)
+        try:
+            n = f.read_text(encoding="utf-8", errors="replace").count('"event": "pipeline_error"')
+        except OSError:
+            continue
+        if n:
+            out[arm] = out.get(arm, 0) + n
+    return out
+
+
+PIPE_ERR_MIN = 3
+
+
+def _pipe_flag(b: str) -> str:
+    bad = {a: n for n, e in ((x, pipeline_errors(x)) for x in family(b)) for a, n in e.items() if n >= PIPE_ERR_MIN}
+    if not bad:
+        return ""
+    return (f"; PIPELINE ERRORS in the run ({', '.join(f'{a}: {n}' for a, n in bad.items())}): the patch crashes on tasks and the agent fallback hides it, so this verdict says NOTHING about the idea: "
+            "do not learn from it (no `note` that the idea fails), re-propose the idea with a fixed patch and different settings")
+
+
 def _lab_failure(b: str) -> str:
     blk = al.done_block(b)
     if blk is not None and blk.get("status") != "ok" and not (al.meta(b).get("verdict") or al.meta(b).get("result")):
@@ -897,7 +925,7 @@ def hyp_table(max_rows: int = 14) -> str:
             except Exception as ex:  # noqa: BLE001
                 pol = f"policy error {type(ex).__name__}"
         rows.append(f"- {b} [{al.mode_of(b)}] cells {','.join(al.targets_of(b)) or '-'}; set {_set_of(b)} budget {_budget(b)} repeats {al.spec_of(b).get('repeats')}; "
-                    f"state {c._state_ru(b)}{_lab_failure(b)}{'; backend LOCAL' if m.get('backend') == 'local' else ''}; verdict {ver}; diff {diff}; review {m.get('review_recommendation') or 'none'} "
+                    f"state {c._state_ru(b)}{_lab_failure(b)}{_pipe_flag(b)}{'; backend LOCAL' if m.get('backend') == 'local' else ''}; verdict {ver}; diff {diff}; review {m.get('review_recommendation') or 'none'} "
                     f"(data: {str(m.get('review_data_set') or '-')}); decision {dec or 'open'}{' STALE' if m.get('stale') else ''}"
                     f"{'; ON THE STACK' if m.get('in_stack') else ''}; checks/repeats: {chk}" + (f"; {pol}" if pol else ""))
         if len(rows) >= max_rows:
@@ -1787,6 +1815,16 @@ def selftest() -> None:
         al.llm, al.outbox_put = _llm, _put
     assert ans == "Идёт ожидание вердикта." and "QUESTION OF THE HUMAN" in seen["user"] and "YOUR PLAN FROM THE PREVIOUS TICK" in seen["user"] and "CHIEF" in seen["system"]
     assert sent and sent[0][0] == ["42"] and "почему простой" in sent[0][1] and "Идёт ожидание" in sent[0][1] and "почему простой" not in build_context()
+    jd = al.EXP / "results" / "ab_hold" / "journals"
+    jd.mkdir(parents=True)
+    (jd / "arm_x_1.jsonl").write_text('{"event": "pipeline_done"}\n' + '{"ts": 1, "event": "pipeline_error", "error": "AttributeError"}\n' * 3, encoding="utf-8")
+    (jd / "ref_1.jsonl").write_text('{"event": "pipeline_done"}\n', encoding="utf-8")
+    assert pipeline_errors("ab_hold") == {"arm_x": 3} and "PIPELINE ERRORS" in _pipe_flag("ab_hold") and "PIPELINE ERRORS" in hyp_table()
+    if not (al.DRAFTS / "ab_hold.yaml").exists():
+        al.write_draft(dict(d, name="ab_hold", target_cells=["blk/a"]))
+    assert any("pipeline errors" in w for w in accept_policy("ab_hold")[1]), accept_policy("ab_hold")
+    (jd / "arm_x_1.jsonl").write_text('{"event": "pipeline_error"}\n', encoding="utf-8")            # one stray error is noise, not a broken run
+    assert _pipe_flag("ab_hold") == ""
     print("autolab_chief selftest ok")
 
 

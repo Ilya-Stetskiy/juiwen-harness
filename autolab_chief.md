@@ -58,6 +58,9 @@ The context has a HUMAN IDEAS section: ideas the human wrote to you (`шеф и�
 - If an idea is already `later`, look at it again every tick and start it as soon as the reason is gone.
 - The human may also ask you direct questions (`шеф вопрос`): that is a separate call that never reaches you in a tick; your plan and your notes are what you will know then, so keep the plan current and `note` the lessons the human would ask about.
 
+## Broken runs
+If a hypothesis row says PIPELINE ERRORS, its patch crashes on tasks (the agent fallback hides it: tokens go up, points change). Such a verdict says nothing about the idea: never `note` that the idea fails, never base an `accept` on it (the code refuses). Re-propose the idea with a fixed patch and a different setting value (otherwise the dedupe of the lab refuses it as already decided) and mention the crash in `why`.
+
 ## Time
 The context starts with a TIME line: when the experiments end, the final deadline, the typical length of a run and the PHASE. Plan backwards from it. Code refuses new runs that cannot finish, and stops all planning when the time is over, so use the last hours for confirming the best candidates and for a stack that passes its whole-stack check. A hypothesis already on the stack does not hold its task types any more: the next hypothesis of the same type is built on top of the stack.
 
