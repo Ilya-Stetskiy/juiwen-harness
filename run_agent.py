@@ -46,6 +46,23 @@ async def _worker(wid: int, sched: Scheduler, cfg: Config, ledger: TokenLedger, 
                     continue
             return
         task, model, pred = nxt
+        from harness import skip_psucc
+        sk = skip_psucc.should_skip(sched, pred, float(cfg.budget), ledger.spent())
+        if sk is not None:   # HARNESS_SKIP_PSUCC>0
+            journal.event("skip_psucc", task=task.task_id, reward=task.reward, **sk)
+            try:
+                g = await skip_psucc.free_answer(task, model, pred, cfg, ledger, journal)
+                if g:
+                    write_answer(task.dir, guard.scrub_answer(g, task.task_id, journal))
+            except Exception as exc:  # noqa: BLE001
+                journal.event("task_error", task=task.task_id, error=type(exc).__name__, detail=str(exc)[:200])
+            try:
+                sched.report(task, model, 0.0)
+            except Exception:  # noqa: BLE001
+                pass
+            journal.event("task_end", task=task.task_id, status="skipped", cost=0.0,
+                          total=round(ledger.spent(), 1), reward=task.reward)
+            continue
         if await batching.maybe_batch(task, model, pred, sched, cfg, ledger, journal, state, wid):  # HARNESS_BATCH_SIZE>1
             continue
         before = ledger.task_cost(task.task_id)
