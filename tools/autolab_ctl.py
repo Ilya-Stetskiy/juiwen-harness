@@ -821,9 +821,34 @@ def do_chief_on(uid, e: dict) -> str:
     return "✅ Шеф включён" + (" в режиме dry-run (ничего не запускает)." if ch.dry_run() else " в боевом режиме.") + " Первый тик в течение 30 минут."
 
 
-def cmd_chief_ru(args: list[str]) -> dict:
+def _spawn_chief_ask(chat, question: str) -> str:
+    log = al.DRAFTS / f"tg_chiefask_{time.strftime('%Y%m%d_%H%M%S')}.log"
+    al.DRAFTS.mkdir(parents=True, exist_ok=True)
+    with open(log, "w") as out:
+        p = subprocess.Popen([sys.executable, str(HERE / "autolab_chief.py"), "ask", f"--chat={chat or ''}", question], stdout=out, stderr=subprocess.STDOUT, start_new_session=True, cwd=str(HERE))
+    return f"pid {p.pid}"
+
+
+def cmd_chief_ru(args: list[str], uid=None, chat=None) -> dict:
     import autolab_chief as ch
     sub = (args[0].lower() if args else "")
+    if sub in ("идея", "idea"):
+        text = " ".join(args[1:]).strip()
+        if len(text) < 15:
+            return reply("Формат: `шеф идея <текст>` (хотя бы пара предложений: что попробовать, где и чего ждёте).")
+        n = ch.add_idea(text, uid)
+        journal(uid, "chief_idea", id=n, text=text[:200])
+        return reply(f"💡 Идея #{n} записана. Шеф увидит её на ближайшем тике (в течение ~5 минут, если он включён) и ответит: возьмёт в работу, отложит или откажется с причиной. Список: `шеф идеи`."
+                     + ("" if ch.is_on() else "\n⚠️ Шеф сейчас выключен: идея ждёт его включения."))
+    if sub in ("идеи", "ideas"):
+        return reply(ch.ideas_view())
+    if sub in ("вопрос", "ask", "q"):
+        text = " ".join(args[1:]).strip()
+        if len(text) < 5:
+            return reply("Формат: `шеф вопрос <текст>`. Шеф ответит по тому, что знает сейчас (состояние лаборатории, свой план, заметки, ваши идеи), отдельным сообщением в течение минуты.")
+        journal(uid, "chief_question", text=text[:200])
+        _spawn_chief_ask(chat or uid, text)
+        return reply("🧭 Вопрос передан шефу, ответ придёт отдельным сообщением (обычно до минуты; один вызов модели, ~0,1 $).")
     if sub in ("вкл", "on"):
         return None
     if sub in ("план", "plan"):
@@ -1412,7 +1437,7 @@ HELP = """🧪 Автолаборатория. Команда пишется с�
 • стоп • продолжить • меню • /id
 • автопилот [вкл|выкл] • локально [вкл|выкл]
 • стек [сбросить] • принять стек — накопленные шефом гипотезы (ветка auto/stack): состояние, общий перепрогон, слияние в main
-• шеф [вкл|выкл|план|дайджест] — агент-шеф: сам ведёт траекторию улучшений, принимает только в ветку auto/
+• шеф [вкл|выкл|план|дайджест|идеи] • шеф идея <текст> • шеф вопрос <текст> — агент-шеф: сам ведёт траекторию улучшений, принимает только в ветку auto/
 • ключ (или проверка ключа) — провайдер, модели, баланс ключа Claude/OpenRouter без траты; реальный тест кнопкой
 • команды (или помощь) — этот список • команды файл — подробно файлом для команды"""
 ALIASES = {"принять": "accept", "merge": "accept", "отчёт": "report", "отчет": "report", "рецензия": "review", "статус": "status", "очередь": "queue",
@@ -1489,7 +1514,7 @@ def handle(uid, text: str, chat=None, chat_type: str = "private") -> dict | None
                 journal(uid, "decision", what="chief_off")
                 al.chief_flag().unlink(missing_ok=True)
                 return reply("⏹ Шеф выключен. Уже поставленное в очередь доработает, автопилот снова может предлагать (если включён).")
-            return cmd_chief_ru(args)
+            return cmd_chief_ru(args, uid, chat)
         if cmd == "localdata":
             if args and args[0].lower() in ("вкл", "on"):
                 return ask_localdata_on(uid, args)
@@ -1979,6 +2004,10 @@ def selftest() -> None:
     assert "включён" in handle(42, "шеф статус")["text"] and "ещё не написан" in handle(42, "шеф план")["text"] and "Дайджест" in handle(42, "шеф дайджест")["text"]
     assert "chief is on" in al.cmd_autopilot()
     assert "Шеф выключен" in handle(42, "шеф выкл")["text"] and not al.chief_flag().exists() and handle(7, "шеф вкл") is None
+    # ideas and questions for the chief
+    assert "Формат" in handle(42, "шеф идея")["text"] and "Формат" in handle(42, "шеф вопрос")["text"] and "Идей пока нет" in handle(42, "шеф идеи")["text"]
+    r = handle(42, "шеф идея Попробовать ранний выход для задач search при уверенном первом ответе")
+    assert "Идея #1" in r["text"] and "выключен" in r["text"] and "ранний выход" in handle(42, "шеф идеи")["text"] and handle(7, "шеф идея Попробовать что-нибудь такое") is None
     assert "выключен" in handle(42, "автопилот выкл")["text"] and not al.autopilot_flag().exists()
     assert handle(7, "автопилот вкл") is None
     # 5d. local data collection switch (a flag + the old stop file), confirmation needed to turn it on

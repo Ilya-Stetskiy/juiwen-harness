@@ -28,7 +28,7 @@ import autolab_ctl as c  # noqa: E402
 import autolab_status as astat  # noqa: E402
 
 UID = "chief"
-ACTIONS = ("propose", "check", "rerun", "review", "accept", "reject", "wait", "note", "parallel")
+ACTIONS = ("propose", "check", "rerun", "review", "accept", "reject", "wait", "note", "parallel", "idea")
 EXTRA_FORBIDDEN = ("Dockerfile", "harness/mode.py")                  # kept by the human on top of the autolab's own patch rules
 EXTRA_FORBIDDEN_PREFIX = ("profiles/mode_",)
 DECIDED = ("accepted", "rejected", "auto_rejected")
@@ -83,6 +83,102 @@ def _say(text: str) -> None:
 def _chat() -> str:
     ids = al.allowed_chat_ids()
     return str(ids[0]) if ids else ""
+
+
+# ------------------------------------------------------------------ ideas of the human and questions to the chief
+def ideas_file() -> Path:
+    return al.DRAFTS / "chief_ideas.json"
+
+
+def _ideas() -> list[dict]:
+    try:
+        d = json.loads(ideas_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return d if isinstance(d, list) else []
+
+
+def _save_ideas(items: list[dict]) -> None:
+    al.DRAFTS.mkdir(parents=True, exist_ok=True)
+    ideas_file().write_text(json.dumps(items[-200:], ensure_ascii=False), encoding="utf-8")
+
+
+def add_idea(text: str, by="") -> int:
+    """An idea of the human: it waits in the file until the chief answers it (taken / later / declined)."""
+    items = _ideas()
+    nid = max([int(i.get("id", 0)) for i in items] + [0]) + 1
+    items.append({"id": nid, "ts": time.strftime("%Y-%m-%d %H:%M"), "by": str(by), "text": " ".join(str(text).split())[:1500], "status": "new", "answer": ""})
+    _save_ideas(items)
+    return nid
+
+
+def resolve_idea(iid: int, verdict: str, why: str) -> bool:
+    items = _ideas()
+    for i in items:
+        if int(i.get("id", 0)) == iid:
+            i["status"], i["answer"], i["resolved"] = verdict, " ".join(str(why).split())[:300], time.strftime("%Y-%m-%d %H:%M")
+            _save_ideas(items)
+            return True
+    return False
+
+
+def open_ideas() -> list[dict]:
+    return [i for i in _ideas() if i.get("status") in ("new", "later")]
+
+
+def ideas_context() -> str:
+    items = _ideas()
+    op = [i for i in items if i.get("status") in ("new", "later")]
+    done = [i for i in items if i.get("status") not in ("new", "later")][-5:]
+    if not op and not done:
+        return "HUMAN IDEAS: (none)"
+    out = ["HUMAN IDEAS (written by the human; they come before your own ideas. Answer every `new` one in this call with the action `idea`: taken = you start it now (propose/check in the same call) or it is already in work, later = keep it open, declined = a reason):"]
+    for i in op:
+        out.append(f"- #{i['id']} [{i['status']}, {i['ts']}] {i['text']}" + (f"  (your answer: {i['answer']})" if i.get("answer") else ""))
+    for i in done:
+        out.append(f"- #{i['id']} [{i['status']}] {i['text'][:160]} -> {i.get('answer', '')[:120]}")
+    return "\n".join(out)
+
+
+def ideas_view() -> str:
+    items = _ideas()
+    if not items:
+        return "💡 Идей пока нет. Написать: `шеф идея <текст>`."
+    ru = {"new": "ждёт шефа", "later": "отложена", "taken": "в работе", "declined": "отклонена"}
+    return "💡 Идеи шефу:\n" + "\n".join(f"#{i['id']} [{ru.get(i.get('status'), i.get('status'))}] {i['text'][:200]}" + (f"\n   ↳ {i['answer']}" if i.get("answer") else "") for i in items[-12:])
+
+
+QA_SYSTEM = ("You are the CHIEF of the harness autolab, now answering a direct question of the human. The context below is exactly what you know right now "
+             "(the state of the lab, your plan, notes and the human's ideas). Answer in Russian, plainly and concisely (up to about 1500 characters), as plain text, NOT JSON, "
+             "no actions are taken. Use only the context: if the answer is not in it, say what you do not know instead of guessing; cite the numbers and hypothesis names. "
+             "Your role is given for reference; ignore its output format.")
+
+
+def ask(question: str, chat: str = "") -> str:
+    """A question of the human: one model call with the whole context of the chief plus its recent actions. The question is not stored in the chief's context."""
+    cfg = al.limits_cfg()
+    chat = chat or _chat()
+    if al.day_usd() >= cfg["usd_per_day"] * 0.85 or al.week_usd() >= cfg["usd_per_week"] * 0.85:
+        ans = f"Не отвечаю моделью: расход Claude близок к лимиту ({al.day_usd():.2f} из {cfg['usd_per_day']} $ за сутки): остаток нужен шефу для тиков."
+    else:
+        st = _state()
+        recent = "RECENT ACTIONS OF THE CHIEF:\n" + ("\n".join(f"{r['ts']} {r['action']} {r['name']} -> {r['result']}" + (" [dry]" if r.get("dry") else "") for r in st["log"][-15:]) or "(none)")
+        try:
+            raw = al.llm(QA_SYSTEM + "\n\n--- your role ---\n" + role_text(), build_context() + "\n\n" + recent + "\n\nQUESTION OF THE HUMAN:\n" + question.strip(), 1500, "chief")
+            ans = re.sub(r"<think>.*?</think>", "", raw or "", flags=re.S).strip() or "(пустой ответ модели)"
+        except SystemExit as ex:
+            ans = "Модель не ответила: " + al.scrub(str(ex))[:200]
+    try:
+        with open(al.DRAFTS / "chief_qa.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": time.strftime("%Y-%m-%d %H:%M"), "q": question[:500], "a": ans[:2000]}, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+    msg = "🧭 Шеф отвечает на вопрос: «" + " ".join(question.split())[:150] + "»\n\n" + ans
+    try:
+        al.outbox_put([chat] if chat else al.allowed_chat_ids(), msg)
+    except Exception as ex:  # noqa: BLE001
+        al.log(f"chief: the answer was not sent: {type(ex).__name__}: {ex}")
+    return ans
 
 
 # ------------------------------------------------------------------ hypotheses: families, best arm, checks
@@ -866,6 +962,7 @@ def build_context() -> str:
         "harness-gap.md L4:\n" + _l4(),
         "YOUR PLAN FROM THE PREVIOUS TICK (CHIEF_PLAN.md):\n" + (_read(plan_file(), 3500) or "(none yet: write it)"),
         "YOUR NOTES: " + (" | ".join(st["notes"]) or "(none)"),
+        ideas_context(),
     ]
     return "\n\n".join(parts)
 
@@ -892,6 +989,11 @@ def validate_action(a) -> str | None:
     kind = a["action"]
     if not str(a.get("why") or "").strip():
         return "every action needs a `why`"
+    if kind == "idea":
+        if not isinstance(a.get("id"), int) or not any(int(i.get("id", 0)) == a["id"] for i in _ideas()):
+            return f"no idea #{a.get('id')}"
+        if a.get("verdict") not in ("taken", "later", "declined"):
+            return "verdict must be taken, later or declined"
     if kind in ("check", "rerun", "review", "accept", "reject"):
         nm = c._safe_name(a.get("name") or "")
         if not nm or not (al.DRAFTS / f"{nm}.yaml").exists():
@@ -950,6 +1052,11 @@ def _execute(a: dict, dry: bool, st: dict, gate: tuple[bool, str]) -> str:
         if kind == "note" and not dry:
             st["notes"].append(str(a.get("text") or a.get("why"))[:300])
         return "ok"
+    if kind == "idea":
+        if dry:
+            return f"dry-run: would mark idea #{a['id']} as {a['verdict']}"
+        resolve_idea(a["id"], a["verdict"], str(a.get("why") or ""))
+        return f"idea #{a['id']}: {a['verdict']}"
     if kind == "parallel":
         old = al.parallel_runs_now()
         if dry:
@@ -1040,7 +1147,7 @@ def _limit_stop(st: dict, why: str) -> str:
 
 
 ACTION_RU = {"parallel": ("⚙️", "Параллельность прогонов"), "propose": ("💡", "Предложить гипотезу"), "check": ("🔬", "Проверка на других данных"), "rerun": ("🔁", "Повтор"), "review": ("📝", "Ревью"),
-             "accept": ("✅", "В стек"), "reject": ("❌", "Отклонить"), "wait": ("⏳", "Ждать"), "note": ("🗒", "Заметка")}
+             "accept": ("✅", "В стек"), "reject": ("❌", "Отклонить"), "wait": ("⏳", "Ждать"), "note": ("🗒", "Заметка"), "idea": ("💡", "Идея человека")}
 RESULT_RU = ((r"^dry-run: would order a review of .*", "заказал бы ревью"),
              (r"^dry-run: would check \S+ on (\S+)( at (\d+))?", lambda m: f"поставил бы проверку на {m.group(1)}" + (f", бюджет {m.group(3)}" if m.group(3) else "")),
              (r"^dry-run: would rerun \S+ x(\d+)", lambda m: f"поставил бы повтор ×{m.group(1)}"), (r"^dry-run: would reject .*", "отклонил бы"), (r"^dry-run: would set parallel runs (\d+) -> (\d+)", lambda m: f"поставил бы параллельность {m.group(1)} → {m.group(2)}"),
@@ -1068,7 +1175,7 @@ def _fmt_action(n: int, desc: str, nm: str, why: str, res: str) -> str:
     return f"{n}. {icon} {label}" + (f"\n   {nm}" if nm else "") + f"\n   Почему: {_short(why)}\n   Итог: {_short(res, 220)}"
 
 
-INSTANT = ("reject", "accept", "note", "wait")           # done at once: the next thought may follow in the same tick
+INSTANT = ("reject", "accept", "note", "wait", "idea")           # done at once: the next thought may follow in the same tick
 BLOCKING = ("propose", "check", "rerun", "review")        # something has to run (a review, an experiment): the result wakes the next tick
 
 
@@ -1083,6 +1190,7 @@ def _world_sig() -> str:
     q = sorted(f.stem for k in ("pending", "running") for f in (al.EXP / "queue" / k).glob("*.yaml"))
     sk = al.stack_load()
     parts.append((tuple(q), (sk.get("check") or {}).get("state"), (sk.get("ablation") or {}).get("state"), bool(sk.get("blocked")), len(_items(sk))))
+    parts.append(tuple((i["id"], i["status"]) for i in open_ideas()))
     return hashlib.md5(repr(parts).encode()).hexdigest()
 
 
@@ -1116,7 +1224,7 @@ def _round(st: dict, dry: bool, gate: tuple[bool, str], lines: list[str]) -> tup
                 res = f"failed: {type(ex).__name__}: {al.scrub(str(ex))[:200]}"
         okres = not err and not res.startswith(("refused", "invalid", "failed"))
         kind = a.get("action") if isinstance(a, dict) else "?"
-        if okres and not dry and kind not in ("wait", "note"):
+        if okres and not dry and kind not in ("wait", "note", "idea"):
             done += 1
             if kind in BLOCKING:
                 blocking = True
@@ -1212,7 +1320,7 @@ def status_text() -> str:
             f"Лимиты: действий за тик {cfg['chief_max_actions']}, активных гипотез {cfg['chief_max_active']}, перепроверок на гипотезу {cfg['chief_max_rechecks']}.\n"
             f"Стек: {len(_items())} гипотез (`стек`).\n"
             "Последние действия:\n" + ("\n".join(f"• {r['ts']} {r['action']} {r['name']} → {r['result']}" + (" [dry]" if r.get("dry") else "") for r in last) or "• нет")
-            + "\nКоманды: шеф вкл (спросит подтверждение), шеф выкл, шеф план, шеф дайджест")
+            + "\nКоманды: шеф вкл (спросит подтверждение), шеф выкл, шеф план, шеф дайджест, шеф идея <текст>, шеф идеи, шеф вопрос <текст>")
 
 
 def plan_text() -> str:
@@ -1656,6 +1764,29 @@ def selftest() -> None:
     assert "stop flag" in cmd_chief(force=True)
     al.STOP_FILE.unlink()
     assert "Шеф" in status_text() and "Дайджест" in digest_text()
+    # ideas of the human: written, shown to the chief, answered by the action `idea`, wake the chief; questions use the whole context and are not stored in it
+    assert "HUMAN IDEAS: (none)" in build_context() and "Идей пока нет" in ideas_view()
+    sig0 = _world_sig()
+    i1 = add_idea("Попробовать ранний выход для задач search, если первый ответ уверенный", by=42)
+    assert i1 == 1 and _world_sig() != sig0 and "#1 [new" in build_context() and "ждёт шефа" in ideas_view()
+    assert validate_action({"action": "idea", "id": 9, "verdict": "taken", "why": "x"}) and validate_action({"action": "idea", "id": 1, "verdict": "maybe", "why": "x"})
+    assert validate_action({"action": "idea", "id": 1, "verdict": "later", "why": "жду слот"}) is None
+    assert "dry-run" in execute({"action": "idea", "id": 1, "verdict": "later", "why": "x"}, True, _state(), (True, "")) and open_ideas()[0]["status"] == "new"
+    assert execute({"action": "idea", "id": 1, "verdict": "later", "why": "жду слот"}, False, _state(), (True, "")) == "idea #1: later"
+    assert open_ideas()[0]["status"] == "later" and "жду слот" in build_context() and "отложена" in ideas_view()
+    sig1 = _world_sig()
+    resolve_idea(1, "declined", "уже пробовали")
+    assert not open_ideas() and _world_sig() != sig1 and "уже пробовали" in build_context()
+    sent, seen = [], {}
+    _llm, _put = al.llm, al.outbox_put
+    al.llm = lambda system, user, mt, p: (seen.update(system=system, user=user), "<think>x</think>Идёт ожидание вердикта.")[1]
+    al.outbox_put = lambda to, text, *a_, **k_: sent.append((to, text))
+    try:
+        ans = ask("Что сейчас в очереди и почему простой?", "42")
+    finally:
+        al.llm, al.outbox_put = _llm, _put
+    assert ans == "Идёт ожидание вердикта." and "QUESTION OF THE HUMAN" in seen["user"] and "YOUR PLAN FROM THE PREVIOUS TICK" in seen["user"] and "CHIEF" in seen["system"]
+    assert sent and sent[0][0] == ["42"] and "почему простой" in sent[0][1] and "Идёт ожидание" in sent[0][1] and "почему простой" not in build_context()
     print("autolab_chief selftest ok")
 
 
@@ -1664,5 +1795,9 @@ if __name__ == "__main__":
         selftest()
     elif "--status" in sys.argv:
         print(status_text())
+    elif len(sys.argv) > 2 and sys.argv[1] == "ask":
+        _a = sys.argv[2:]
+        _chat_arg = _a.pop(0)[7:] if _a and _a[0].startswith("--chat=") else ""
+        print(ask(" ".join(_a), _chat_arg))
     else:
         print(cmd_chief(force="--force" in sys.argv))
