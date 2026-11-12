@@ -1014,6 +1014,52 @@ def fresh_reports(n: int = 2) -> str:
     return "\n".join(f"### {f.stem}\n{_read(f, 900)}" for f in fs) or "(none)"
 
 
+def token_report() -> str:
+    """Where the tokens and the points go at the scale that is handed in (the reference arm of the latest finished experiment on mixed100_dev at 60k or more):
+    per task type the cost, the share spent on tasks that were NOT solved, the unanswerable tasks and the reward lost. The chief cannot read cells.jsonl itself."""
+    best = None
+    for f in (al.EXP / "results").glob("*/cells.jsonl"):
+        n = f.parent.name
+        try:
+            sp = al.spec_of(n)
+        except Exception:  # noqa: BLE001
+            continue
+        if str(sp.get("set")) != "mixed100_dev" or not (str(sp.get("budget") or "0").isdigit() and int(sp["budget"]) >= 60000):
+            continue
+        if best is None or f.stat().st_mtime > best[0]:
+            best = (f.stat().st_mtime, n, f, sp)
+    if not best:
+        return "WHERE THE TOKENS GO: (no finished mixed100_dev run at 60k or more yet)"
+    _, n, f, sp = best
+    arm0 = next(iter(sp.get("arms") or {}), None)
+    rows = []
+    try:
+        for ln in f.read_text(encoding="utf-8").splitlines():
+            r = json.loads(ln)
+            if r.get("arm") == arm0 and not r.get("infra"):
+                rows.append(r)
+    except (OSError, ValueError):
+        return "WHERE THE TOKENS GO: (cells unreadable)"
+    reps = len({r.get("repeat") for r in rows}) or 1
+    cost = lambda r: float(r.get("hybrid_cost") or (r.get("in_tokens", 0) / 10 + r.get("out_tokens", 0)))
+    tot = sum(cost(r) for r in rows) or 1.0
+    out = [f"WHERE THE TOKENS GO (reference arm {arm0} of {n}, mixed100_dev, budget {sp.get('budget')}, per run averaged over {reps} repeats): total {tot / reps:.0f} tokens, "
+           f"{sum(r.get('reward', 0) for r in rows if r.get('correct')) / reps:.0f} points of {sum(r.get('reward', 0) for r in rows) / reps:.0f}"]
+    for ty in sorted({r.get("type") for r in rows}):
+        rs = [r for r in rows if r.get("type") == ty]
+        bad = [r for r in rs if not r.get("correct")]
+        un = [r for r in rs if r.get("unanswerable")]
+        wrong_ans = [r for r in rs if r.get("answered") and not r.get("correct")]
+        out.append(f"- {ty}: {len(rs) / reps:.0f} tasks, solved {100 * (len(rs) - len(bad)) / len(rs):.0f}%, {sum(cost(r) for r in rs) / reps:.0f} tokens ({100 * sum(cost(r) for r in rs) / tot:.0f}% of all), "
+                   f"unsolved tasks cost {sum(cost(r) for r in bad) / reps:.0f} tokens ({100 * sum(cost(r) for r in bad) / tot:.0f}%) and lose {sum(r.get('reward', 0) for r in bad) / reps:.0f} points; "
+                   f"unanswerable {len(un) / reps:.0f} tasks ({sum(cost(r) for r in un) / reps:.0f} tokens, solved {100 * sum(1 for r in un if r.get('correct')) / max(1, len(un)):.0f}%); "
+                   f"answered wrongly {len(wrong_ans) / reps:.0f} tasks ({sum(cost(r) for r in wrong_ans) / reps:.0f} tokens)")
+    allbad = [r for r in rows if not r.get("correct")]
+    out.append(f"- ALL unsolved: {len(allbad) / reps:.0f} tasks, {sum(cost(r) for r in allbad) / reps:.0f} tokens ({100 * sum(cost(r) for r in allbad) / tot:.0f}% of the budget spent), {sum(r.get('reward', 0) for r in allbad) / reps:.0f} points lost; "
+               f"the unused part of the budget: {max(0, int(sp.get('budget') or 0) - tot / reps):.0f} tokens")
+    return "\n".join(out)
+
+
 def build_context() -> str:
     cfg = al.limits_cfg()
     root = al.status_root()
@@ -1029,6 +1075,7 @@ def build_context() -> str:
         "RATING by mode (scheme of statuses):\n" + "\n".join(astat.prompt_block(root, 5, 3, m) for m in astat.MODES) if astat.index(root) else "(no scheme)",
         "PRIORITY.md (head):\n" + _read(root / "PRIORITY.md", 1800),
         "HYPOTHESES (open and decided in the last 2 days):\n" + hyp_table(),
+        token_report(),
         "RECENT JOURNAL ROWS of the cells:\n" + recent_journal(),
         "QUEUE (stand experiments are not yours): " + queue_text(),
         "FRESH VERDICTS:\n" + fresh_reports(),
@@ -1295,6 +1342,13 @@ def _world_sig() -> str:
     q = sorted(f.stem for k in ("pending", "running") for f in (al.EXP / "queue" / k).glob("*.yaml"))
     sk = al.stack_load()
     parts.append((tuple(q), (sk.get("check") or {}).get("state"), (sk.get("ablation") or {}).get("state"), bool(sk.get("blocked")), len(_items(sk))))
+    for k_ in ("check", "ablation"):        # a check that is `running` in the state file but already has its verdict: the next tick must process it
+        x_ = sk.get(k_) or {}
+        if x_.get("state") == "running":
+            try:
+                parts.append((k_, _outcome(x_["name"])[0]))
+            except Exception:  # noqa: BLE001
+                parts.append((k_, "?"))
     parts.append(tuple((i["id"], i["status"]) for i in open_ideas()))
     return hashlib.md5(repr(parts).encode()).hexdigest()
 
@@ -1948,6 +2002,21 @@ def selftest() -> None:
         al.llm, al.outbox_put = _llm, _put
     assert ans == "Идёт ожидание вердикта." and "QUESTION OF THE HUMAN" in seen["user"] and "YOUR PLAN FROM THE PREVIOUS TICK" in seen["user"] and "CHIEF" in seen["system"]
     assert sent and sent[0][0] == ["42"] and "почему простой" in sent[0][1] and "Идёт ожидание" in sent[0][1] and "почему простой" not in build_context()
+    # the token report: no run -> a plain line; a finished mixed100_dev run at 100k -> a table
+    assert "no finished mixed100_dev run" in token_report()
+    (al.EXP / "sets" / "mixed100_dev.yaml").write_text("role: dev\ntasks: {math: 4}\nseed: 1\n")
+    al.write_draft(dict(d, name="ab_tok", set="mixed100_dev", budget=100000, arms={"ref": {}, "v": {"env": {"HARNESS_X": "1"}}}))
+    rd = al.EXP / "results" / "ab_tok"
+    rd.mkdir(parents=True)
+    cells = [{"arm": "ref", "repeat": 1, "type": "math", "correct": True, "reward": 3, "unanswerable": False, "answered": True, "hybrid_cost": 300.0},
+             {"arm": "ref", "repeat": 1, "type": "search", "correct": False, "reward": 2, "unanswerable": False, "answered": True, "hybrid_cost": 900.0},
+             {"arm": "ref", "repeat": 1, "type": "search", "correct": False, "reward": 5, "unanswerable": True, "answered": True, "hybrid_cost": 700.0},
+             {"arm": "v", "repeat": 1, "type": "math", "correct": True, "reward": 3, "unanswerable": False, "answered": True, "hybrid_cost": 9999.0}]
+    (rd / "cells.jsonl").write_text("\n".join(json.dumps(x_) for x_ in cells), encoding="utf-8")
+    tr = token_report()
+    assert "reference arm ref of ab_tok" in tr and "total 1900 tokens" in tr and "3 points of 10" in tr and "- search: 2 tasks, solved 0%" in tr and "ALL unsolved: 2 tasks, 1600 tokens (84%" in tr and "98100 tokens" in tr, tr
+    assert "WHERE THE TOKENS GO" in build_context()
+    # a running check whose verdict is already there wakes the chief
     jd = al.EXP / "results" / "ab_hold" / "journals"
     jd.mkdir(parents=True)
     (jd / "arm_x_1.jsonl").write_text('{"event": "pipeline_done"}\n' + '{"ts": 1, "event": "pipeline_error", "error": "AttributeError"}\n' * 3, encoding="utf-8")
