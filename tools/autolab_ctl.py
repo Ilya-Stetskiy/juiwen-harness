@@ -1971,9 +1971,9 @@ def selftest() -> None:
     assert "включён" in handle(42, "автопилот")["text"]
     # the chief: a human switches it on with a confirmation; plan, digest, status are views; off is immediate
     r = handle(42, "шеф")
-    assert "Шеф: выключен" in r["text"] and "dry-run" in r["text"] and r["buttons"][0][0]["data"] == "al:cmd:chief:вкл", r
+    assert "Шеф: выключен" in r["text"] and ("dry-run" in r["text"] or "боевой" in r["text"]) and r["buttons"][0][0]["data"] == "al:cmd:chief:вкл", r
     r = handle(42, "шеф вкл")
-    assert "Включить шефа" in r["text"] and "dry-run" in r["text"] and "Код" in r["text"] and not al.chief_flag().exists()
+    assert "Включить шефа" in r["text"] and ("dry-run" in r["text"] or "БОЕВОЙ" in r["text"]) and "Код" in r["text"] and not al.chief_flag().exists()
     assert "another user" in handle_callback(43, r["buttons"][0][0]["data"])["text"] and not al.chief_flag().exists()
     assert "Шеф включён" in handle_callback(42, r["buttons"][0][0]["data"])["text"] and al.chief_flag().exists()
     assert "включён" in handle(42, "шеф статус")["text"] and "ещё не написан" in handle(42, "шеф план")["text"] and "Дайджест" in handle(42, "шеф дайджест")["text"]

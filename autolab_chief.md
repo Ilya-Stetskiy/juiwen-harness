@@ -48,3 +48,6 @@ You are called when something changed (a verdict, a review, a free slot) or on a
 
 ## Time
 The context starts with a TIME line: when the experiments end, the final deadline, the typical length of a run and the PHASE. Plan backwards from it. Code refuses new runs that cannot finish, and stops all planning when the time is over, so use the last hours for confirming the best candidates and for a stack that passes its whole-stack check. A hypothesis already on the stack does not hold its task types any more: the next hypothesis of the same type is built on top of the stack.
+
+## Parallel runs
+Runs of one experiment (arm x repeat) go in parallel, 4 at once at first. The context has a PARALLEL RUNS line with the number and the recent aborts. If experiments abort with gateway 429 / abuse, or cells turn infrastructure-broken under load, lower the number with the action `parallel` (n 1..4; it applies to experiments queued from then on) and say why; raise it back only after clean experiments. Do not touch it otherwise.

@@ -51,3 +51,4 @@ goal_mode: accuracy              # focus of autopilot / cycle / ideas / chief: a
 chief_experiments_until: ""      # "2026-11-14 00:10" host time: after it the chief starts nothing new; the TIME line of its context shows the phase
 chief_final_deadline: ""         # the end of everything (final runs on main, hand-in); only informs the chief
 chief_final_check_h: 3           # this many hours before experiments_until a whole-stack check is forced
+exp_parallel_runs: 4              # runs (arm x repeat) of one experiment at once; the chief may lower it (parallel.json, 1..4) when it sees aborts from load

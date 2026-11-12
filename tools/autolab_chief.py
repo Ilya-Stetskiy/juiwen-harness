@@ -28,7 +28,7 @@ import autolab_ctl as c  # noqa: E402
 import autolab_status as astat  # noqa: E402
 
 UID = "chief"
-ACTIONS = ("propose", "check", "rerun", "review", "accept", "reject", "wait", "note")
+ACTIONS = ("propose", "check", "rerun", "review", "accept", "reject", "wait", "note", "parallel")
 EXTRA_FORBIDDEN = ("Dockerfile", "harness/mode.py")                  # kept by the human on top of the autolab's own patch rules
 EXTRA_FORBIDDEN_PREFIX = ("profiles/mode_",)
 DECIDED = ("accepted", "rejected", "auto_rejected")
@@ -729,6 +729,22 @@ def role_text() -> str:
     return "You are the chief of the harness autolab. (the role file autolab_chief.md is missing: plan conservatively, prefer wait)"
 
 
+def parallel_text() -> str:
+    """The parallelism of the runs and what could show it is too much: aborts of the last 12 hours, the gateway abuse cooldown."""
+    bad = []
+    for f in al.EXP.glob("results/*/ABORTED.txt"):
+        if time.time() - f.stat().st_mtime < 12 * 3600:
+            bad.append(f"{f.parent.name}: {_read(f, 120).strip()}")
+    ab = ""
+    try:
+        gw = json.loads((al.LAB / "dispatcher_state.json").read_text(encoding="utf-8")).get("gateway") or {}
+        ab = f"; gateway abuse cooldown {gw.get('abuse')} s, day {gw.get('day_pct')}%, week {gw.get('week_pct')}%"
+    except (OSError, ValueError):
+        pass
+    return (f"PARALLEL RUNS: {al.parallel_runs_now()} runs of one experiment at once (action `parallel` with n 1..{al.PARALLEL_MAX} changes it for experiments queued from now on){ab}. "
+            + ("Aborts in the last 12 h: " + " | ".join(bad[:4]) + ". If they look like gateway 429 / abuse / broken cells from load, lower it; raise it again only after clean experiments." if bad else "No aborts in the last 12 h."))
+
+
 def _l4() -> str:
     for f in (HERE.parent / "harness-gap.md", HERE.parent.parent / "harness-gap.md", al.LAB / "harness-gap.md"):
         t = _read(f, 400000)
@@ -815,6 +831,7 @@ def build_context() -> str:
     st = _state()
     parts = [
         time_text(),
+        parallel_text(),
         f"NOW {time.strftime('%Y-%m-%d %H:%M')} host time. goal_mode (focus) = {cfg.get('goal_mode') or 'alternate'}; dry_run = {cfg.get('chief_dry_run', True)}.",
         f"LIMITS: max_actions per tick {cfg['chief_max_actions']}; active hypotheses {len({al.family_base(v) for v in al.active_types().values()})}/{cfg['chief_max_active']}; "
         f"queue depth {al.queue_depth()}/{cfg['max_queue_depth']}; rechecks per hypothesis {cfg['chief_max_rechecks']}; Claude dollars today {al.day_usd():.2f}/{cfg['usd_per_day']}, "
@@ -871,6 +888,10 @@ def validate_action(a) -> str | None:
             return "propose needs an `idea` (a few sentences)"
         if a.get("mode") not in (None, "accuracy", "economy", "both"):
             return "mode must be accuracy, economy or both"
+    if kind == "parallel":
+        n = a.get("n")
+        if not isinstance(n, int) or not 1 <= n <= al.PARALLEL_MAX:
+            return f"n must be an integer 1..{al.PARALLEL_MAX}"
     if kind == "rerun":
         n = a.get("repeats")
         if not isinstance(n, int) or not 2 <= n <= al.limits_cfg()["max_rerun_repeats"]:
@@ -900,6 +921,12 @@ def execute(a: dict, dry: bool, st: dict, gate: tuple[bool, str]) -> str:
         if kind == "note" and not dry:
             st["notes"].append(str(a.get("text") or a.get("why"))[:300])
         return "ok"
+    if kind == "parallel":
+        old = al.parallel_runs_now()
+        if dry:
+            return f"dry-run: would set parallel runs {old} -> {a['n']}"
+        (al.DRAFTS / "parallel.json").write_text(json.dumps({"n": a["n"], "ts": time.strftime("%Y-%m-%d %H:%M"), "why": str(a.get("why"))[:200]}), encoding="utf-8")
+        return f"parallel runs {old} -> {al.parallel_runs_now()} (for experiments queued from now on)"
     name = al.family_base(c._safe_name(a.get("name") or "") or "") if a.get("name") else ""
     if kind in ("propose", "check", "rerun"):
         tr = _time_refusal(kind)
@@ -983,11 +1010,11 @@ def _limit_stop(st: dict, why: str) -> str:
     return f"chief: stopped: {why}"
 
 
-ACTION_RU = {"propose": ("💡", "Предложить гипотезу"), "check": ("🔬", "Проверка на других данных"), "rerun": ("🔁", "Повтор"), "review": ("📝", "Ревью"),
+ACTION_RU = {"parallel": ("⚙️", "Параллельность прогонов"), "propose": ("💡", "Предложить гипотезу"), "check": ("🔬", "Проверка на других данных"), "rerun": ("🔁", "Повтор"), "review": ("📝", "Ревью"),
              "accept": ("✅", "В стек"), "reject": ("❌", "Отклонить"), "wait": ("⏳", "Ждать"), "note": ("🗒", "Заметка")}
 RESULT_RU = ((r"^dry-run: would order a review of .*", "заказал бы ревью"),
              (r"^dry-run: would check \S+ on (\S+)( at (\d+))?", lambda m: f"поставил бы проверку на {m.group(1)}" + (f", бюджет {m.group(3)}" if m.group(3) else "")),
-             (r"^dry-run: would rerun \S+ x(\d+)", lambda m: f"поставил бы повтор ×{m.group(1)}"), (r"^dry-run: would reject .*", "отклонил бы"),
+             (r"^dry-run: would rerun \S+ x(\d+)", lambda m: f"поставил бы повтор ×{m.group(1)}"), (r"^dry-run: would reject .*", "отклонил бы"), (r"^dry-run: would set parallel runs (\d+) -> (\d+)", lambda m: f"поставил бы параллельность {m.group(1)} → {m.group(2)}"),
              (r"^dry-run: would propose for (\S+)", lambda m: f"предложил бы гипотезу для {m.group(1)}"), (r"^dry-run: the policy would ALLOW.*", "политика разрешила бы добавить в стек"),
              (r"^dry-run: the policy REFUSES: ", "политика отказала бы: "), (r"^refused: ", "отказ: "), (r"^invalid: ", "неверное действие: "), (r"^failed: ", "ошибка: "),
              (r"^queued ", "поставлено в очередь: "), (r"^ok$", "ок"))
@@ -1533,6 +1560,23 @@ def selftest() -> None:
     cmd_chief(force=True)
     assert len(list((c.CFG_DIR / "tg_outbox").glob("*.json"))) == n_msg + 1
     cfg_over["chief_experiments_until"] = cfg_over["chief_final_deadline"] = ""
+    # parallel runs: the chief may lower it (1..4), nothing else; the number reaches the queued experiment
+    assert validate_action({"action": "parallel", "n": 9, "why": "x"}) and validate_action({"action": "parallel", "n": 0, "why": "x"}) and validate_action({"action": "parallel", "n": 2, "why": "x"}) is None
+    assert al.parallel_runs_now() == 4 and "PARALLEL RUNS: 4" in build_context()
+    assert "dry-run" in execute({"action": "parallel", "n": 2, "why": "x"}, True, _state(), (True, "ok")) and al.parallel_runs_now() == 4
+    assert "4 -> 2" in execute({"action": "parallel", "n": 2, "why": "429 in the last experiment"}, False, _state(), (True, "ok")) and al.parallel_runs_now() == 2
+    cfg_over["max_queue_depth"] = 12
+    al.write_draft(dict(d, name="ab_par", target_cells=["blk/a"]))
+    al.set_meta("ab_par", sim_verdict="pass")
+    al.cmd_submit("ab_par")
+    assert yaml.safe_load((al.EXP / "queue" / "pending" / "ab_par.yaml").read_text(encoding="utf-8"))["parallel_runs"] == 2
+    (al.EXP / "queue" / "pending" / "ab_par.yaml").unlink()
+    al.set_meta("ab_par", decision="postponed")
+    cfg_over["max_queue_depth"] = 4
+    (al.DRAFTS / "parallel.json").unlink()
+    (al.EXP / "results" / "ab_old").mkdir(parents=True)
+    (al.EXP / "results" / "ab_old" / "ABORTED.txt").write_text("gateway proxy is halted (429/limits guard)")
+    assert "ab_old: gateway proxy is halted" in parallel_text()
     # a hypothesis on the stack holds no task types
     al.set_meta("ab_hold", stage="verdict", verdict={"b": "accept"}, target_cells=["blk/a"], queued_at=time.time())
     assert al.hyp_active("ab_hold")

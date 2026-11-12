@@ -72,7 +72,7 @@ LIMITS_DEFAULT = {
     "usd_per_run": 5.0, "usd_per_day": 10.0, "usd_per_week": 50.0,   # Claude dollars of everything the autolab calls (the chief included): per process run, per local day, per ISO week
     "claude_model_chief": "claude-opus-5-5",   # the chief (tools/autolab_chief.py): plans the next steps of the improvement trajectory
     "chief_dry_run": True,             # the chief plans and tells the chat but executes nothing until a human sets this to false
-    "exp_parallel_runs": 3,            # runs (arm x repeat) of one experiment at once (lab.py parallel_runs); the gateway proxy caps at rpm 55
+    "exp_parallel_runs": 4,            # runs (arm x repeat) of one experiment at once (lab.py parallel_runs); the gateway proxy caps at rpm 55
     "chief_max_actions": 4,            # actions per model call
     "chief_experiments_until": "",     # "YYYY-MM-DD HH:MM" host time: after it the chief starts nothing new (the time of the experiments ends)
     "chief_final_deadline": "",        # the end of everything (the final runs on main and the hand-in): only shown to the chief
@@ -1488,6 +1488,18 @@ def queue_depth() -> int:
     return sum(1 for k in ("pending", "running") for f in (EXP / "queue" / k).glob("ab_*.yaml"))
 
 
+PARALLEL_MAX = 4
+
+
+def parallel_runs_now() -> int:
+    """Runs of one experiment at once: the chief's override (parallel.json, 1..PARALLEL_MAX) else exp_parallel_runs of the config."""
+    try:
+        n = int(json.loads((DRAFTS / "parallel.json").read_text(encoding="utf-8"))["n"])
+    except (OSError, ValueError, KeyError, TypeError):
+        n = int(limits_cfg().get("exp_parallel_runs") or 1)
+    return max(1, min(PARALLEL_MAX, n))
+
+
 def cmd_submit(name: str) -> None:
     import yaml
     if STOP_FILE.exists():
@@ -1502,7 +1514,7 @@ def cmd_submit(name: str) -> None:
     lim = limits_cfg()
     if queue_depth() >= lim["max_queue_depth"]:
         raise SystemExit(f"queue has {queue_depth()} experiments (max_queue_depth={lim['max_queue_depth']})")
-    e.setdefault("parallel_runs", int(lim.get("exp_parallel_runs") or 1))
+    e.setdefault("parallel_runs", parallel_runs_now())
     est = exp_requests_estimate(e)
     if est > lim["max_expected_requests_cycle"]:
         raise SystemExit(f"estimated {est} gateway requests (max_expected_requests_cycle={lim['max_expected_requests_cycle']})")
