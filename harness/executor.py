@@ -34,6 +34,21 @@ def fallback_estimate(task_type: str) -> float:
     return FALLBACK_ESTIMATE.get(task_type, 4000.0)
 
 
+def route_model(task, model_name: str, journal=None) -> str:
+    """HARNESS_MODEL_SEARCH (empty = auto): every executor call of a search task uses that model instead of the auto
+    choice. The censor (reasoning x3) and the calls follow the returned model."""
+    import os
+    m = os.environ.get("HARNESS_MODEL_SEARCH", "").strip()
+    if m and getattr(task, "task_type", None) == "search" and m != model_name:
+        if journal is not None:
+            try:
+                journal.event("model_override", task=task.task_id, auto=model_name, model=m, switch="HARNESS_MODEL_SEARCH")
+            except Exception:  # noqa: BLE001
+                pass
+        return m
+    return model_name
+
+
 @dataclass
 class ExecResult:
     status: str  # solved | unsolvable | failed | deferred (late fallback, not finished yet)
@@ -99,6 +114,7 @@ async def run_task(task: TaskInfo, model_name: str, pred: Prediction, cfg: Confi
 
     from . import budget, guard, judge, limits
 
+    model_name = route_model(task, model_name, journal)
     profile = load_profile(task.task_type)
     mode = os.environ.get("HARNESS_MODE") or profile.get("mode", "pipeline")
     pipeline = PIPELINES.get(task.task_type)
@@ -348,6 +364,7 @@ async def run_agent_task(task: TaskInfo, model_name: str, pred: Prediction, cfg:
     from .llm import effective_max_tokens, guarded
 
     t0 = time.time()
+    model_name = route_model(task, model_name, None)
     profile = load_profile(task.task_type)
     tmp_ws: str | None = None
     if task.workspace is not None:
