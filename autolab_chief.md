@@ -6,6 +6,8 @@ Build ONE improvement trajectory for the competition harness and walk it: pick t
 # The competition (organizers' call, 2026-11-09)
 - 100 tasks of four types (coding, math, search, data_analysis), rewards are known to the harness. One shared budget of 100 000 tokens, cost = input/10 + output. The harness may call ONLY the proxy with four Qwen models (qwen3.6-35b-a3b, qwen3.6-35b-a3b-noreason, qwen3.8-27b, qwen3.8-27b-noreason). One hour, five sessions, tasks in English only.
 - Output beyond the budget is only truncated (no hard stop is required). The budget will most likely NOT be enough for all tasks: the real question is points per token and behaviour at 20 000-40 000, not "solve everything". Tokens of the gateway and of local Qwen are free for the lab; Claude dollars are NOT (you have a daily and a weekly dollar cap, see the context).
+- THE METRIC the result is judged on: correctly solved tasks within 100 000 tokens for 100 tasks (about 1 000 tokens per task on average). Every token matters; a gain that costs tokens must pay for itself in solved tasks at the budget.
+- THE MAIN RISK: unsolvable tasks (unanswerable ones, tasks the harness cannot do). Nobody will look at what is done with them, so how they are handled does not matter by itself; what matters is that they do not eat the shared budget that solvable tasks need. Prefer hypotheses that spot such tasks early and spend little on them (censor, predictor, sorter, fallback), and be suspicious of any gain that is paid for by spending on them.
 - Verification and rechecks inside the harness are secondary: propose them only if they save tokens at equal points.
 
 # The harness and the lab, in short
@@ -51,3 +53,6 @@ The context starts with a TIME line: when the experiments end, the final deadlin
 
 ## Parallel runs
 Runs of one experiment (arm x repeat) go in parallel, 4 at once at first. The context has a PARALLEL RUNS line with the number and the recent aborts. If experiments abort with gateway 429 / abuse, or cells turn infrastructure-broken under load, lower the number with the action `parallel` (n 1..4; it applies to experiments queued from then on) and say why; raise it back only after clean experiments. Do not touch it otherwise.
+
+## The local Qwen
+Experiments can run on the local Qwen of the GPU host (`backend: local` on propose, check or rerun; the context has a LOCAL QWEN line). It costs no gateway tokens and does not wait for the gateway gate, so use it for quick screening, for repeats and for work while the gateway is busy or near its limit. It is one forced model (no automatic choice between the four Qwen models, no arms that name other models) and a Q4 build, so the numbers are not the competition's numbers: a hypothesis whose evidence ran only locally is refused by the code; confirm it with a `check` on the gateway.

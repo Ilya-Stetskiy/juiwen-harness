@@ -190,6 +190,10 @@ def accept_policy(name: str) -> tuple[bool, list[str]]:
                 second = True
     if not second:
         why.append(f"no second budget (at least 20% away from {b0}) without a loss beyond the threshold (`check` with `budget`)")
+    # (3b) the competition runs on the gateway Qwen: at least one run of the evidence is there
+    backs = {al.meta(n).get("backend") or "gateway" for n in [base] + chk}
+    if "gateway" not in backs:
+        why.append("all the evidence ran on the local Qwen: confirm it on the gateway (`check` with backend gateway)")
     # (4) the reviewer
     rec = m.get("review_recommendation")
     if not rec or rec == "не указана":
@@ -745,6 +749,20 @@ def parallel_text() -> str:
             + ("Aborts in the last 12 h: " + " | ".join(bad[:4]) + ". If they look like gateway 429 / abuse / broken cells from load, lower it; raise it again only after clean experiments." if bad else "No aborts in the last 12 h."))
 
 
+def local_text() -> str:
+    try:
+        up = bool(al.sr.shim_ready())
+    except Exception:  # noqa: BLE001
+        up = False
+    try:
+        streams = len(al._local_stream_pids())
+    except Exception:  # noqa: BLE001
+        streams = 0
+    return (f"LOCAL QWEN: {'up' if up else 'NOT reachable'} (llama-server, one model, 3 slots; the data stream of the lab uses it: {streams} process(es)). Experiments may run there with `backend: local` "
+            "on propose / check / rerun: no gateway tokens and no gateway gate, but it is one forced model (no auto routing of models, no arms that name other models) and a Q4 build, so it is "
+            "good for quick screening and for work while the gateway is busy; the code refuses accept unless some evidence ran on the gateway.")
+
+
 def _l4() -> str:
     for f in (HERE.parent / "harness-gap.md", HERE.parent.parent / "harness-gap.md", al.LAB / "harness-gap.md"):
         t = _read(f, 400000)
@@ -783,7 +801,7 @@ def hyp_table(max_rows: int = 14) -> str:
             except Exception as ex:  # noqa: BLE001
                 pol = f"policy error {type(ex).__name__}"
         rows.append(f"- {b} [{al.mode_of(b)}] cells {','.join(al.targets_of(b)) or '-'}; set {_set_of(b)} budget {_budget(b)} repeats {al.spec_of(b).get('repeats')}; "
-                    f"state {c._state_ru(b)}{_lab_failure(b)}; verdict {ver}; diff {diff}; review {m.get('review_recommendation') or 'none'} "
+                    f"state {c._state_ru(b)}{_lab_failure(b)}{'; backend LOCAL' if m.get('backend') == 'local' else ''}; verdict {ver}; diff {diff}; review {m.get('review_recommendation') or 'none'} "
                     f"(data: {str(m.get('review_data_set') or '-')}); decision {dec or 'open'}{' STALE' if m.get('stale') else ''}"
                     f"{'; ON THE STACK' if m.get('in_stack') else ''}; checks/repeats: {chk}" + (f"; {pol}" if pol else ""))
         if len(rows) >= max_rows:
@@ -832,6 +850,7 @@ def build_context() -> str:
     parts = [
         time_text(),
         parallel_text(),
+        local_text(),
         f"NOW {time.strftime('%Y-%m-%d %H:%M')} host time. goal_mode (focus) = {cfg.get('goal_mode') or 'alternate'}; dry_run = {cfg.get('chief_dry_run', True)}.",
         f"LIMITS: max_actions per tick {cfg['chief_max_actions']}; active hypotheses {len({al.family_base(v) for v in al.active_types().values()})}/{cfg['chief_max_active']}; "
         f"queue depth {al.queue_depth()}/{cfg['max_queue_depth']}; rechecks per hypothesis {cfg['chief_max_rechecks']}; Claude dollars today {al.day_usd():.2f}/{cfg['usd_per_day']}, "
@@ -888,6 +907,8 @@ def validate_action(a) -> str | None:
             return "propose needs an `idea` (a few sentences)"
         if a.get("mode") not in (None, "accuracy", "economy", "both"):
             return "mode must be accuracy, economy or both"
+    if kind in ("propose", "check", "rerun") and a.get("backend") not in (None, "gateway", "local"):
+        return "backend must be gateway or local"
     if kind == "parallel":
         n = a.get("n")
         if not isinstance(n, int) or not 1 <= n <= al.PARALLEL_MAX:
@@ -915,6 +936,14 @@ def _gate_ok() -> tuple[bool, str]:
 
 # ------------------------------------------------------------------ executing one action
 def execute(a: dict, dry: bool, st: dict, gate: tuple[bool, str]) -> str:
+    al.BACKEND_NEXT = a.get("backend") if a.get("action") in ("propose", "check", "rerun") else None
+    try:
+        return _execute(a, dry, st, gate)
+    finally:
+        al.BACKEND_NEXT = None
+
+
+def _execute(a: dict, dry: bool, st: dict, gate: tuple[bool, str]) -> str:
     kind = a["action"]
     cfg = al.limits_cfg()
     if kind in ("wait", "note"):
@@ -934,7 +963,7 @@ def execute(a: dict, dry: bool, st: dict, gate: tuple[bool, str]) -> str:
             return "refused: " + tr
         if al.queue_depth() >= cfg["max_queue_depth"]:
             return f"refused: queue is full ({al.queue_depth()}/{cfg['max_queue_depth']})"
-        if not gate[0] and not dry:
+        if not gate[0] and not dry and a.get("backend") != "local":
             return f"refused: gateway gate: {gate[1]}"
     if kind == "propose":
         if len({al.family_base(v) for v in al.active_types().values()}) >= cfg["chief_max_active"]:
@@ -1263,6 +1292,14 @@ def selftest() -> None:
     add_check("ab_win_fresh3", "dev_math", 50000, "clarify", -2.0, 7.0)      # loss within the threshold counts as "no loss beyond"
     ok, why = accept_policy("ab_win")
     assert ok, why
+    # all the evidence on the local Qwen: refused until some run was on the gateway
+    for n_ in ("ab_win", "ab_win_fresh", "ab_win_fresh3"):
+        al.set_meta(n_, backend="local")
+    assert any("local Qwen" in w for w in accept_policy("ab_win")[1])
+    al.set_meta("ab_win_fresh3", backend="gateway")
+    assert accept_policy("ab_win")[0]
+    for n_ in ("ab_win", "ab_win_fresh", "ab_win_fresh3"):
+        al.set_meta(n_, backend=None)
     # (4) the reviewer, (5) stale, (6) forbidden files
     al.set_meta("ab_win", review_recommendation="отклонить")
     assert any("recommends reject" in w for w in accept_policy("ab_win")[1])
@@ -1572,6 +1609,26 @@ def selftest() -> None:
     assert yaml.safe_load((al.EXP / "queue" / "pending" / "ab_par.yaml").read_text(encoding="utf-8"))["parallel_runs"] == 2
     (al.EXP / "queue" / "pending" / "ab_par.yaml").unlink()
     al.set_meta("ab_par", decision="postponed")
+    # the local Qwen: one forced model, the backend reaches the queued experiment, arms with other models are refused, the gateway gate does not stop it
+    assert validate_action({"action": "check", "name": "ab_two", "backend": "cloud", "why": "x"}) and "LOCAL QWEN" in build_context()
+    al.sr.shim_ready = lambda: True
+    al.write_draft(dict(d, name="ab_loc", target_cells=["blk/a"]))
+    al.set_meta("ab_loc", sim_verdict="pass")
+    al.BACKEND_NEXT = "local"
+    al.cmd_submit("ab_loc")
+    al.BACKEND_NEXT = None
+    ql = yaml.safe_load((al.EXP / "queue" / "pending" / "ab_loc.yaml").read_text(encoding="utf-8"))
+    assert ql["backend"] == "local" and ql["model"] == "local-35b-noreason" and al.meta("ab_loc")["backend"] == "local", ql
+    (al.EXP / "queue" / "pending" / "ab_loc.yaml").unlink()
+    al.write_draft(dict(d, name="ab_loc2", target_cells=["blk/a"], arms={"a": {}, "b": {"model": "qwen3.8-27b"}}))
+    al.set_meta("ab_loc2", sim_verdict="pass")
+    al.BACKEND_NEXT = "local"
+    try:
+        al.cmd_submit("ab_loc2")
+        raise AssertionError("local with a gateway-only model must be refused")
+    except SystemExit as ex_:
+        assert "one Qwen" in str(ex_)
+    al.BACKEND_NEXT = None
     cfg_over["max_queue_depth"] = 4
     (al.DRAFTS / "parallel.json").unlink()
     (al.EXP / "results" / "ab_old").mkdir(parents=True)

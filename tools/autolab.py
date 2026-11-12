@@ -72,6 +72,7 @@ LIMITS_DEFAULT = {
     "usd_per_run": 5.0, "usd_per_day": 10.0, "usd_per_week": 50.0,   # Claude dollars of everything the autolab calls (the chief included): per process run, per local day, per ISO week
     "claude_model_chief": "claude-opus-5-5",   # the chief (tools/autolab_chief.py): plans the next steps of the improvement trajectory
     "chief_dry_run": True,             # the chief plans and tells the chat but executes nothing until a human sets this to false
+    "local_model": "local-35b-noreason",   # the model of experiments run on the local Qwen (local-35b = thinking on)
     "exp_parallel_runs": 4,            # runs (arm x repeat) of one experiment at once (lab.py parallel_runs); the gateway proxy caps at rpm 55
     "chief_max_actions": 4,            # actions per model call
     "chief_experiments_until": "",     # "YYYY-MM-DD HH:MM" host time: after it the chief starts nothing new (the time of the experiments ends)
@@ -1489,6 +1490,24 @@ def queue_depth() -> int:
 
 
 PARALLEL_MAX = 4
+BACKEND_NEXT: str | None = None       # set by the chief around one call: the backend ("gateway" | "local") of the experiments queued by it
+
+
+def apply_backend(e: dict, m: dict) -> str:
+    """The backend of an experiment: the chief's choice for this call, else the hypothesis' own (a check / repeat inherits it), else the gateway.
+    The local Qwen is one forced model (HARNESS_FORCE_MODEL), so arms that name other models cannot run there."""
+    be = BACKEND_NEXT or m.get("backend") or "gateway"
+    if be != "local":
+        return "gateway"
+    bad = [a for a, s_ in (e.get("arms") or {}).items() if (s_ or {}).get("model") and not str(s_["model"]).startswith("local")]
+    if bad:
+        raise SystemExit(f"the local backend has one Qwen: arms {bad} name other models")
+    if not sr.shim_ready():
+        raise SystemExit("the local Qwen (llama-server :8011 / shim :18444) is not reachable")
+    e["backend"] = "local"
+    if not str(e.get("model") or "").startswith("local"):
+        e["model"] = str(limits_cfg().get("local_model") or "local-35b-noreason")
+    return "local"
 
 
 def parallel_runs_now() -> int:
@@ -1514,6 +1533,7 @@ def cmd_submit(name: str) -> None:
     lim = limits_cfg()
     if queue_depth() >= lim["max_queue_depth"]:
         raise SystemExit(f"queue has {queue_depth()} experiments (max_queue_depth={lim['max_queue_depth']})")
+    be = apply_backend(e, m)
     e.setdefault("parallel_runs", parallel_runs_now())
     est = exp_requests_estimate(e)
     if est > lim["max_expected_requests_cycle"]:
@@ -1547,7 +1567,7 @@ def cmd_submit(name: str) -> None:
         tmp.unlink()
         raise SystemExit(f"the lab refused the experiment: {ex}")
     shutil.move(str(tmp), str(dst))
-    set_meta(name, stage="queued", queued_at=time.time(), gw_week_used_at_submit=gw_week_used(), expected_requests=est,
+    set_meta(name, stage="queued", queued_at=time.time(), gw_week_used_at_submit=gw_week_used(), expected_requests=est, backend=be,
              **({} if m.get("stack_exp") else {"stack_at_submit": stack_sig()}))
     log(f"{name} is in queue/pending (expected ~{est} gateway requests); the dispatcher runs it")
     record_journal(name, "не завершён", f"в очереди, ожидается около {est} запросов шлюза")
