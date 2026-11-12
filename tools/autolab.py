@@ -1048,6 +1048,9 @@ def set_meta(name: str, **kw) -> None:
 def hyp_active(name: str) -> bool:
     """A hypothesis holds its task types from the moment it enters the queue until a human decides (accept, reject, postpone) or the lab verdict is
     `reject` (automatic). Hypotheses that finished before decisions existed do not hold anything."""
+    base_ = meta(name).get("check_of")
+    if base_ and (decision_of(base_) or meta(base_).get("in_stack")):
+        return False      # a check / repeat of a hypothesis that is decided or already on the stack holds nothing of its own
     if decision_of(name) or meta(name).get("stack_exp") or meta(name).get("in_stack"):      # a check of the stack and a hypothesis already on the stack hold no task types
         return False
     if any((EXP / "queue" / k / f"{name}.yaml").exists() for k in ("pending", "running")):

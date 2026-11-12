@@ -1639,6 +1639,12 @@ def selftest() -> None:
     assert al.hyp_active("ab_hold")
     al.set_meta("ab_hold", in_stack=True)
     assert not al.hyp_active("ab_hold")
+    al.write_draft(dict(d, name="ab_hold_fresh", target_cells=["blk/a"]))
+    al.set_meta("ab_hold_fresh", stage="verdict", verdict={"b": "accept"}, target_cells=["blk/a"], queued_at=time.time(), check_of="ab_hold")
+    assert not al.hyp_active("ab_hold_fresh")                                           # the check of a hypothesis on the stack holds nothing
+    al.set_meta("ab_hold", in_stack=False)
+    assert al.hyp_active("ab_hold_fresh") and al.hyp_active("ab_hold")                  # not on the stack and open: both hold
+    al.set_meta("ab_hold", in_stack=True)
     al.write_draft(dict(d, name="ab_inv", target_cells=["blk/a"]))
     al.set_meta("ab_inv", stage="queued", target_cells=["blk/a"], queued_at=time.time())
     (al.EXP / "queue" / "done" / "ab_inv.yaml").write_text("name: ab_inv" + chr(10) * 2 + "# ---- written by lab.py: status and result of this experiment (the part above is the experiment) ----" + chr(10) + "status: invalid" + chr(10) + "reason: set no longer builds to its frozen hash" + chr(10), encoding="utf-8")
