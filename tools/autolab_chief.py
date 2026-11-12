@@ -739,6 +739,13 @@ def _l4() -> str:
     return "(harness-gap.md is not available on this host)"
 
 
+def _lab_failure(b: str) -> str:
+    blk = al.done_block(b)
+    if blk is not None and blk.get("status") != "ok" and not (al.meta(b).get("verdict") or al.meta(b).get("result")):
+        return f" (LAB {blk.get('status')}: {str(blk.get('reason') or '')[:140]}; it holds nothing; do not rerun it the same way)"
+    return ""
+
+
 def hyp_table(max_rows: int = 14) -> str:
     rows = []
     bases = sorted({al.family_base(n) for n in _names()}, key=lambda b: -al.meta(b).get("queued_at", 0))
@@ -760,7 +767,7 @@ def hyp_table(max_rows: int = 14) -> str:
             except Exception as ex:  # noqa: BLE001
                 pol = f"policy error {type(ex).__name__}"
         rows.append(f"- {b} [{al.mode_of(b)}] cells {','.join(al.targets_of(b)) or '-'}; set {_set_of(b)} budget {_budget(b)} repeats {al.spec_of(b).get('repeats')}; "
-                    f"state {c._state_ru(b)}; verdict {ver}; diff {diff}; review {m.get('review_recommendation') or 'none'} "
+                    f"state {c._state_ru(b)}{_lab_failure(b)}; verdict {ver}; diff {diff}; review {m.get('review_recommendation') or 'none'} "
                     f"(data: {str(m.get('review_data_set') or '-')}); decision {dec or 'open'}{' STALE' if m.get('stale') else ''}"
                     f"{'; ON THE STACK' if m.get('in_stack') else ''}; checks/repeats: {chk}" + (f"; {pol}" if pol else ""))
         if len(rows) >= max_rows:
@@ -1531,6 +1538,10 @@ def selftest() -> None:
     assert al.hyp_active("ab_hold")
     al.set_meta("ab_hold", in_stack=True)
     assert not al.hyp_active("ab_hold")
+    al.write_draft(dict(d, name="ab_inv", target_cells=["blk/a"]))
+    al.set_meta("ab_inv", stage="queued", target_cells=["blk/a"], queued_at=time.time())
+    (al.EXP / "queue" / "done" / "ab_inv.yaml").write_text("name: ab_inv" + chr(10) * 2 + "# ---- written by lab.py: status and result of this experiment (the part above is the experiment) ----" + chr(10) + "status: invalid" + chr(10) + "reason: set no longer builds to its frozen hash" + chr(10), encoding="utf-8")
+    assert not al.hyp_active("ab_inv") and "LAB invalid" in hyp_table()                 # the lab refused it: it holds no task types, the chief sees why
     al.chief_flag().unlink()
     assert "off" in cmd_chief(force=True)
     al.chief_flag().write_text("on")

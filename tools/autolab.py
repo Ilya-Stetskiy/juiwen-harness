@@ -1051,7 +1051,10 @@ def hyp_active(name: str) -> bool:
     if any((EXP / "queue" / k / f"{name}.yaml").exists() for k in ("pending", "running")):
         return True
     m = meta(name)
-    return bool(m.get("queued_at", 0) >= decisions_epoch() and (m.get("verdict") or m.get("result") or done_block(name) is not None))
+    blk = done_block(name)
+    if blk is not None and blk.get("status") != "ok" and not (m.get("verdict") or m.get("result")):
+        return False         # the lab refused or aborted it (invalid set, broken stand): there is nothing to decide, so it holds no task types
+    return bool(m.get("queued_at", 0) >= decisions_epoch() and (m.get("verdict") or m.get("result") or blk is not None))
 
 
 def active_types() -> dict[str, str]:
