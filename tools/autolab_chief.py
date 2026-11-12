@@ -1022,6 +1022,8 @@ def validate_action(a) -> str | None:
             return f"no idea #{a.get('id')}"
         if a.get("verdict") not in ("taken", "later", "declined"):
             return "verdict must be taken, later or declined"
+        if a.get("name") is not None and not isinstance(a.get("name"), str):
+            return "name must be a hypothesis name"
     if kind in ("check", "rerun", "review", "accept", "reject"):
         nm = c._safe_name(a.get("name") or "")
         if not nm or not (al.DRAFTS / f"{nm}.yaml").exists():
@@ -1083,6 +1085,10 @@ def _execute(a: dict, dry: bool, st: dict, gate: tuple[bool, str]) -> str:
     if kind == "idea":
         if dry:
             return f"dry-run: would mark idea #{a['id']} as {a['verdict']}"
+        if a["verdict"] == "taken":
+            nm_ = al.family_base(c._safe_name(a.get("name") or "") or "") if a.get("name") else ""
+            if not ROUND_QUEUED and not (nm_ and (al.DRAFTS / f"{nm_}.yaml").exists()):
+                return f"refused: idea #{a['id']} cannot be `taken` while no hypothesis for it exists (no propose of this call was queued, no existing `name` given): use `later` and try again at the next tick"
         resolve_idea(a["id"], a["verdict"], str(a.get("why") or ""))
         return f"idea #{a['id']}: {a['verdict']}"
     if kind == "parallel":
@@ -1119,6 +1125,7 @@ def _execute(a: dict, dry: bool, st: dict, gate: tuple[bool, str]) -> str:
         except Exception as ex:  # noqa: BLE001
             return f"failed: {type(ex).__name__}: {al.scrub(str(ex))[:200]}"
         new = [n for n in sorted(set(_names()) - before) if al.meta(n).get("stage") in ("queued", "verdict")]
+        ROUND_QUEUED.extend(new)
         for nm in new:
             c._spawn(["await", nm], "await")
         return ("queued " + ", ".join(new)) if new else "nothing passed the validation, the simulator and the dedupe"
@@ -1203,6 +1210,7 @@ def _fmt_action(n: int, desc: str, nm: str, why: str, res: str) -> str:
     return f"{n}. {icon} {label}" + (f"\n   {nm}" if nm else "") + f"\n   Почему: {_short(why)}\n   Итог: {_short(res, 220)}"
 
 
+ROUND_QUEUED: list[str] = []     # hypotheses queued by the `propose` actions of the current round: the proof behind an idea marked `taken`
 INSTANT = ("reject", "accept", "note", "wait", "idea")           # done at once: the next thought may follow in the same tick
 BLOCKING = ("propose", "check", "rerun", "review")        # something has to run (a review, an experiment): the result wakes the next tick
 
@@ -1239,7 +1247,10 @@ def _round(st: dict, dry: bool, gate: tuple[bool, str], lines: list[str]) -> tup
         al.log("chief: the answer was not a JSON plan")
         return "chief: the answer was not a JSON plan: nothing done", None, 0, False, False
     done, blocking, replan = 0, False, False
-    for a in plan["actions"][: int(cfg["chief_max_actions"])]:
+    ROUND_QUEUED.clear()
+    acts = plan["actions"][: int(cfg["chief_max_actions"])]
+    acts = [a for a in acts if not (isinstance(a, dict) and a.get("action") == "idea")] + [a for a in acts if isinstance(a, dict) and a.get("action") == "idea"]   # the answers to ideas come last: they depend on what was queued
+    for a in acts:
         err = validate_action(a)
         if err:
             res = "invalid: " + err
@@ -1802,6 +1813,14 @@ def selftest() -> None:
     assert "dry-run" in execute({"action": "idea", "id": 1, "verdict": "later", "why": "x"}, True, _state(), (True, "")) and open_ideas()[0]["status"] == "new"
     assert execute({"action": "idea", "id": 1, "verdict": "later", "why": "жду слот"}, False, _state(), (True, "")) == "idea #1: later"
     assert open_ideas()[0]["status"] == "later" and "жду слот" in build_context() and "отложена" in ideas_view()
+    ROUND_QUEUED.clear()
+    assert execute({"action": "idea", "id": 1, "verdict": "taken", "why": "x"}, False, _state(), (True, "")).startswith("refused") and open_ideas()[0]["status"] == "later"
+    assert execute({"action": "idea", "id": 1, "verdict": "taken", "name": "ab_win", "why": "x"}, False, _state(), (True, "")) == "idea #1: taken"
+    resolve_idea(1, "later", "жду слот")
+    ROUND_QUEUED.append("ab_x")
+    assert execute({"action": "idea", "id": 1, "verdict": "taken", "why": "x"}, False, _state(), (True, "")) == "idea #1: taken"
+    ROUND_QUEUED.clear()
+    resolve_idea(1, "later", "жду слот")
     sig1 = _world_sig()
     resolve_idea(1, "declined", "уже пробовали")
     assert not open_ideas() and _world_sig() != sig1 and "уже пробовали" in build_context()

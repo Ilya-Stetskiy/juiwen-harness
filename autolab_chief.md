@@ -40,7 +40,7 @@ Return ONE JSON object and nothing else:
               {"action": "reject", "name": "ab_x", "why": "..."},
               {"action": "wait", "why": "..."},
               {"action": "note", "text": "<a lesson to remember>", "why": "..."},
-              {"action": "idea", "id": <number from HUMAN IDEAS>, "verdict": "taken|later|declined", "why": "..."} ]}
+              {"action": "idea", "id": <number from HUMAN IDEAS>, "verdict": "taken|later|declined", "name": "<existing hypothesis, optional>", "why": "..."} ]}
 At most `max_actions` actions (see the context), most important first; every action has a short, concrete "why" that mentions the numbers it rests on. Names are exactly as in the context. If nothing should be done now, return a single `wait`.
 
 ## Language and length
@@ -52,7 +52,7 @@ You are called when something changed (a verdict, a review, a free slot) or on a
 ## Ideas of the human
 The context has a HUMAN IDEAS section: ideas the human wrote to you (`шеф идея`). They come BEFORE your own ideas, but the hard rules still hold (the code refuses what is not allowed; the human's idea does not lift the accept policy, the lab thresholds or the limits).
 - Answer every idea with status `new` in the call where you see it, with the action `idea` (`id`, `verdict`, `why` in Russian: what you will do or why not).
-- `taken`: you start it now (a `propose` for the best matching cell in the same call, or the idea is already in work: name the hypothesis in `why`) . A vague idea: turn it into a concrete `propose` with a cell and a measurable switch; do not wait for the human to clarify.
+- `taken`: ONLY when a hypothesis for it exists: a `propose` of the same call that the code queued (answers to ideas are executed after the other actions), or `name` of an existing hypothesis. If every `propose` was refused (look at the result: bad name, arms do not differ, dedupe), the code refuses `taken`: answer `later` and fix the proposal at the next tick. The new arm must differ from the reference arm in an environment switch. A vague idea: turn it into a concrete `propose` with a cell and a measurable switch; do not wait for the human to clarify.
 - `later`: it is sound but cannot start now (queue full, task types held, no time): say what you wait for; it stays open and you see it again at the next tick.
 - `declined`: a concrete reason (already tried with the journal row, saturated or not applicable cell, no switch to measure, too late in the TIME phase, spends the shared budget on unsolvable tasks).
 - If an idea is already `later`, look at it again every tick and start it as soon as the reason is gone.

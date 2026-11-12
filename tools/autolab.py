@@ -62,7 +62,8 @@ LIMITS_DEFAULT = {
     "max_queue_depth": 4,              # autolab experiments (ab_*) pending + running before submit refuses (experiments of the stand in the same queue are not counted)
     "max_expected_requests_cycle": 12000,   # estimated gateway requests of all experiments of one cycle
     "max_cost_tokens": 150000,         # expected ledger tokens of one experiment
-    "max_code_lines": 120,             # added + removed lines of one model patch
+    "max_code_lines": 400,             # added + removed lines of one model patch (was 120; 2026-11-12: bigger patches, new files allowed)
+    "apply_max_tokens": 16000,         # output tokens of the applying agent (was a fixed 4000: a long patch was cut and its JSON did not close)
     "wait_poll_s": 60, "max_wait_min": 300,
     "max_rerun_repeats": 3,
     # Claude API for the generator and the applying agent (the evaluation runs stay on qwen through the gateway)
@@ -366,6 +367,10 @@ def claude_llm(system: str, user: str, max_tokens: int, purpose: str) -> str:
             code, r = _http_post(url, headers, body)
         except Exception as ex:  # noqa: BLE001 - network errors: the message may not carry the key, scrub anyway
             record_usage(purpose, {}, False, "claude", model)
+            if attempt < 2 and "timed out" not in str(ex).lower():     # a dropped connection through the VPN proxy (SSL EOF, reset): nothing was served, try again; a timeout may have been charged: no retry
+                log(f"Claude API: {type(ex).__name__}; again in {5 * (attempt + 1)} s")
+                time.sleep(5 * (attempt + 1))
+                continue
             raise SystemExit("Claude API unreachable: " + scrub(f"{type(ex).__name__}: {ex}")[:200])
         if code in (429, 529, 502, 503) and attempt < 3:
             record_usage(purpose, {}, False, "claude", model)
@@ -1225,7 +1230,7 @@ def pick_files(root: Path, want: str) -> list[Path]:
     words = {w for w in re.findall(r"[a-z_]{4,}", want.lower())}
     scored = []
     for p in list((root / "harness").glob("*.py")) + list((root / "harness").glob("*/*.py")) + [root / "run_agent.py"]:
-        if not p.exists() or p.stat().st_size > 14000 or p.name == "__init__.py":
+        if not p.exists() or p.stat().st_size > 30000 or p.name == "__init__.py":
             continue
         text = p.read_text(encoding="utf-8", errors="ignore").lower()
         s = sum(2 for w in words if w in p.name.lower()) + sum(1 for w in words if w in text)
@@ -1233,7 +1238,7 @@ def pick_files(root: Path, want: str) -> list[Path]:
     scored.sort(key=lambda x: -x[0])
     out, total = [], 0
     for s, p in scored:
-        if s and len(out) < 3 and total + p.stat().st_size < 24000:
+        if s and len(out) < 5 and total + p.stat().st_size < 60000:
             out.append(p)
             total += p.stat().st_size
     return out or [root / "harness" / "sorter.py"]
@@ -1241,8 +1246,12 @@ def pick_files(root: Path, want: str) -> list[Path]:
 
 EDIT_SYSTEM = ("You edit Python source with exact search/replace blocks. Reply with JSON only: "
                '{"edits": [{"file": "harness/x.py", "old": "exact existing text", "new": "replacement"}], "note": "one sentence"}. '
-               "`old` must occur exactly once in the file, copied character for character including indentation. Keep the change small, "
-               "make it controllable by an environment switch with the old behaviour as default, add no imports of network or shell modules.")
+               "`old` must occur exactly once in the file, copied character for character including indentation. "
+               "To CREATE a new file under harness/ (a new module, solver, pipeline) give `\"old\": \"\"` and the whole file in `new`; the new file must not exist yet, "
+               "and existing code has to import and call it behind the switch. A change may be large when the idea needs it (limit in the user message), but keep it as small as the idea allows. "
+               "Make it controllable by an environment switch with the old behaviour as default (the switch must be a different value in the arm than in the reference arm), "
+               "add no imports of network or shell modules, and never give an imported module a name that a function or class of the same file already has (use `import math as _math`). "
+               "Reply with the JSON object only and keep it complete: it must be valid JSON that closes.")
 
 
 def parse_edits(reply: str) -> list[dict]:
@@ -1258,8 +1267,14 @@ def parse_edits(reply: str) -> list[dict]:
 def apply_edits(wt: Path, edits: list[dict]) -> None:
     for ed in edits:
         f = (wt / ed["file"]).resolve()
-        if wt.resolve() not in f.parents or not f.exists():
+        if wt.resolve() not in f.parents:
             raise ValueError(f"{ed['file']}: not a file of the tree")
+        if ed.get("old") == "" and not f.exists() and str(ed["file"]).endswith(".py"):      # a new file (check_patch still limits where)
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_bytes(str(ed["new"]).replace("\r\n", "\n").encode("utf-8"))
+            continue
+        if not f.exists():
+            raise ValueError(f"{ed['file']}: not a file of the tree (to create a file give an empty `old`)")
         text = f.read_bytes().decode("utf-8").replace("\r\n", "\n")
         if text.count(ed["old"]) != 1:
             raise ValueError(f"{ed['file']}: `old` occurs {text.count(ed['old'])} times (must be exactly 1)")
@@ -1383,8 +1398,8 @@ def cmd_apply(name: str, patch_file: str | None) -> None:
             src = "\n\n".join(f"### {p.relative_to(wt).as_posix()}\n{p.read_text(encoding='utf-8')}" for p in files)
             err = ""
             for attempt in range(2):
-                reply = llm(EDIT_SYSTEM, f"Change wanted: {want}\nOnly these paths may change: {', '.join(ALLOWED_PREFIX)}.\n"
-                            f"{('Your previous edits failed: ' + err) if err else ''}\nFiles:\n{src}", 4000, "apply")
+                reply = llm(EDIT_SYSTEM, f"Change wanted: {want}\nOnly these paths may change: {', '.join(ALLOWED_PREFIX)}. At most {limits_cfg()['max_code_lines']} added plus removed lines in all.\n"
+                            f"{('Your previous edits failed: ' + err) if err else ''}\nFiles:\n{src}", int(limits_cfg()["apply_max_tokens"]), "apply")
                 try:
                     g("checkout", "--", ".")
                     apply_edits(wt, parse_edits(reply))
@@ -2348,6 +2363,19 @@ def cmd_review(name: str, notify_to: list[str] | None = None) -> Path:
 def selftest() -> None:
     import tempfile
     global EXP, DRAFTS, USAGE
+    import tempfile as _tf
+    _wt = Path(_tf.mkdtemp())
+    (_wt / "harness").mkdir()
+    (_wt / "harness" / "a.py").write_text("x = 1\n", encoding="utf-8")
+    apply_edits(_wt, [{"file": "harness/solvers/new_one.py", "old": "", "new": "def f():\n    return 2\n"}, {"file": "harness/a.py", "old": "x = 1", "new": "x = 2"}])
+    assert (_wt / "harness" / "solvers" / "new_one.py").read_text() == "def f():\n    return 2\n" and (_wt / "harness" / "a.py").read_text() == "x = 2\n"
+    for bad in ({"file": "harness/a.py", "old": "", "new": "z"}, {"file": "../x.py", "old": "", "new": "z"}, {"file": "harness/nope.py", "old": "q", "new": "z"}):
+        try:
+            apply_edits(_wt, [bad])
+            raise AssertionError(bad)
+        except ValueError:
+            pass
+    assert limits_cfg()["max_code_lines"] >= 400 and limits_cfg()["apply_max_tokens"] >= 16000
     assert shadowed_imports("import math\nasync def math(ctx):\n    pass\n") == {"math"} and shadowed_imports("import math as _m\ndef math(c):\n    return _m.log(1)\n") == set()
     assert shadowed_imports("from os import path\npath = 1\n") == {"path"} and shadowed_imports("import os\ndef f():\n    import math\n    return math\n") == set() and shadowed_imports("def (") == set()
     EXP = Path(tempfile.mkdtemp())
@@ -2504,7 +2532,7 @@ def selftest() -> None:
     assert check_patch(["harness/sorter.py"], ["NOISE_FLOOR = 0"], 0)
     assert check_patch(["harness/sorter.py"], ["import subprocess"], 0)
     assert check_patch(["harness/sorter.py"], ["x = 1"], 0) is None
-    assert check_patch(["harness/sorter.py"], ["x = 1"] * 200, 0)
+    assert check_patch(["harness/sorter.py"], ["x = 1"] * 500, 0) and check_patch(["harness/sorter.py"], ["x = 1"] * 300, 0) is None
     assert check_patch(["../x.py"], [], 0)
     # edit blocks
     t = Path(tempfile.mkdtemp())
