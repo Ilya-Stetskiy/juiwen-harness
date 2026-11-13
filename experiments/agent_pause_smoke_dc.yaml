@@ -1,0 +1,26 @@
+id: exp-agent-pause-smoke-dc
+name: agent_pause_smoke_dc
+author: human
+hypothesis: >
+  Mechanics check of the late-phase agent pause (harness/agent_pause.py) with a real openjiuwen agent: thresholds are set
+  LOW on purpose (coding=1500) so that the deferred agent runs pause. Expect agent_pause events, agent_resume after the
+  other agents finished, the resumed runs going on with further llm_call events, no task_error, no hang.
+change: harness/agent_pause.py on top of 217f628
+code_dir: /home/i.stetskii/harness-lab/autolab_worktrees/final_retry
+backend: gateway
+model: auto
+set: dev_coding
+repeats: 1
+budget: 30000
+workers: 5
+fallback: late
+priority: 5
+env:
+  HARNESS_RUN_MODE: economy
+  HARNESS_LIMITS: "on"
+  HARNESS_SANDBOX: scrub
+  HARNESS_HARD_CAP: "on"
+  HARNESS_AGENT_PAUSE: "coding=1500,data_analysis=800"
+arms:
+  pause_low:
+    env: {}

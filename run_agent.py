@@ -128,13 +128,15 @@ async def _late_worker(wid: int, queue: list, cfg: Config, ledger: TokenLedger, 
                        t_start: float, state: dict) -> None:
     """Second tier: tasks the pipeline could not solve go to the tool agent, highest reward first, only while the
     remaining budget covers the agent's expected cost (in-flight runs are reserved)."""
+    from harness import agent_pause
     from harness.executor import fallback_estimate, run_agent_task
 
     running = state["running"]  # task id -> (expected cost, ledger cost at start)
 
     def promised() -> float:
         """What running agents are still expected to spend: their estimate minus what is already in the ledger."""
-        return sum(max(est_ - (ledger.task_cost(tid) - b0), 0.0) for tid, (est_, b0) in running.items())
+        return sum(max(est_ - (ledger.task_cost(tid) - b0), 0.0) for tid, (est_, b0) in running.items()
+                   if not agent_pause.PAUSER.is_paused(tid))   # a paused run reserves nothing: queued tasks go first
 
     while queue:
         task, model, pred = queue[0]
@@ -155,8 +157,9 @@ async def _late_worker(wid: int, queue: list, cfg: Config, ledger: TokenLedger, 
         journal.event("task_resume", task=task.task_id, worker=wid, est=est, reward=task.reward)
         status, answer = "error", None
         try:
-            coro = run_agent_task(task, model, pred, cfg, ledger, journal)
-            res = await (asyncio.wait_for(coro, cfg.max_task_seconds) if cfg.limits_on else coro)
+            coro = run_agent_task(task, model, pred, cfg, ledger, journal, pause_base=before)
+            # the per-task time limit counts only the seconds the agent was not paused (harness/agent_pause.py)
+            res = await (agent_pause.run_active(coro, cfg.max_task_seconds, task.task_id) if cfg.limits_on else coro)
             status, answer = res.status, res.answer
             if status == "solved" and answer:
                 write_answer(task.dir, guard.scrub_answer(answer, task.task_id, journal))   # the same rail as the main pass
@@ -303,9 +306,18 @@ async def _run_phases(sched, cfg: Config, ledger: TokenLedger, journal: Journal,
         if os.environ.get("HARNESS_LATE_ORDER", "reward").lower() != "fifo":
             queue.sort(key=lambda x: -x[0].reward)
         journal.event("late_phase", n=len(queue), spent=round(ledger.spent(), 1), budget=cfg.budget)
-        await asyncio.gather(*[
-            _late_worker(i, queue, cfg, ledger, journal, t_start, state) for i in range(cfg.workers)
-        ])
+        from harness import agent_pause
+        agent_pause.PAUSER.setup(ledger, journal, cfg.budget)
+        done = asyncio.Event()
+        out_of_time = lambda: cfg.limits_on and time.time() - t_start > cfg.run_seconds - 60   # noqa: E731
+        watcher = asyncio.ensure_future(agent_pause.PAUSER.watch(done, out_of_time))
+        try:
+            await asyncio.gather(*[
+                _late_worker(i, queue, cfg, ledger, journal, t_start, state) for i in range(cfg.workers)
+            ])
+        finally:
+            done.set()
+            await watcher
 
 
 def main() -> None:

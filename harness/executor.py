@@ -407,7 +407,9 @@ def _rate_retry_rail(task_id: str, model_name: str, journal, ledger):
 
 
 async def run_agent_task(task: TaskInfo, model_name: str, pred: Prediction, cfg: Config,
-                         ledger: TokenLedger, journal: Journal) -> ExecResult:
+                         ledger: TokenLedger, journal: Journal, pause_base: float | None = None) -> ExecResult:
+    """pause_base (late phase only): ledger cost of the task when the agent starts; the run may then pause at the
+    threshold of its type (harness/agent_pause.py, HARNESS_AGENT_PAUSE) instead of going on or being cut."""
     from openjiuwen.core.foundation.llm.model import Model
     from openjiuwen.core.foundation.llm.schema.config import ModelClientConfig, ModelRequestConfig
     from openjiuwen.core.session.agent import create_agent_session
@@ -418,8 +420,10 @@ async def run_agent_task(task: TaskInfo, model_name: str, pred: Prediction, cfg:
     from .censor import CensorRail
     from .budget import BudgetStop
     from .llm import effective_max_tokens, guarded
+    from . import agent_pause
 
     t0 = time.time()
+    pausable = pause_base is not None and bool(agent_pause.thresholds())
     model_name = route_model(task, model_name, None)
     profile = load_profile(task.task_type)
     tmp_ws: str | None = None
@@ -448,8 +452,9 @@ async def run_agent_task(task: TaskInfo, model_name: str, pred: Prediction, cfg:
             model,
             card=card,
             system_prompt=profile["system_prompt"],
-            rails=[_make_tools_rail(list(profile.get("tools", []))),
-                   CensorRail(task.task_id, model_name, ledger, journal, pred)]
+            rails=([agent_pause.make_rail(task.task_id, model_name)] if pausable else [])
+                  + [_make_tools_rail(list(profile.get("tools", []))),
+                     CensorRail(task.task_id, model_name, ledger, journal, pred)]
                   + ([_rate_retry_rail(task.task_id, model_name, journal, ledger)] if agent_retry_on() else []),
             sys_operation=sysop,
             cwd=str(ws),
@@ -462,6 +467,8 @@ async def run_agent_task(task: TaskInfo, model_name: str, pred: Prediction, cfg:
         query = {"query": task.instruction + FOOTER}
         session = create_agent_session(session_id=f"s_{task.task_id}", card=card)
         await session.pre_run(inputs=query)
+        if pausable:   # registered only once the agent really runs: a run still waiting for a call slot is not "active"
+            agent_pause.PAUSER.register(task, pause_base)
         out = await agent.invoke(query, session=session)
         return str(out.get("output", "")) if isinstance(out, dict) else str(out)
 
@@ -476,10 +483,17 @@ async def run_agent_task(task: TaskInfo, model_name: str, pred: Prediction, cfg:
         ans = normalize(task.check, final)
         _early(task, ans)
         return ExecResult("solved", ans, time.time() - t0)
-    except BudgetStop as exc:   # the hard cap: no new call
-        journal.event("task_stopped", task=task.task_id, by="BudgetStop", detail=str(exc)[:120], stage="agent")
+    except BudgetStop as exc:   # the hard cap: no new call (agent_pause.PauseAbort is one too)
+        journal.event("task_stopped", task=task.task_id, by=type(exc).__name__, detail=str(exc)[:120], stage="agent")
         return ExecResult("failed", None, time.time() - t0)
+    except Exception as exc:  # noqa: BLE001 - openjiuwen may wrap the PauseAbort raised inside a rail
+        if pausable and "paused agent given up" in str(exc):
+            journal.event("task_stopped", task=task.task_id, by="PauseAbort", detail=str(exc)[:120], stage="agent")
+            return ExecResult("failed", None, time.time() - t0)
+        raise
     finally:
+        if pausable:
+            agent_pause.PAUSER.unregister(task.task_id)
         if tmp_ws:
             shutil.rmtree(tmp_ws, ignore_errors=True)
 
