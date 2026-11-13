@@ -1,0 +1,29 @@
+id: exp-ab-agent-pause-dc20k
+name: ab_agent_pause_dc20k
+author: human
+hypothesis: >
+  Late-phase agent pause with the fighting thresholds (HARNESS_AGENT_PAUSE=coding=6000,data_analysis=2500) against no pause,
+  fighting profile, fallback late, dev_coding at a binding 20k budget (main pass ~9-12k, 4-5 agent tasks compete for the
+  rest). Expect the same or more points inside the budget: runs past 6000 wait and the rest goes to queued agent tasks first.
+  The effect can be small: only agent runs that pass 6000 tokens are touched. 3 repeats, 2 runs at once (30-minute window).
+change: harness/agent_pause.py (e49fe86)
+code_dir: /home/i.stetskii/harness-lab/autolab_worktrees/final_retry
+backend: gateway
+model: auto
+set: dev_coding
+repeats: 3
+budget: 20000
+workers: 5
+fallback: late
+parallel_runs: 2
+priority: 5
+env:
+  HARNESS_RUN_MODE: economy
+  HARNESS_LIMITS: "on"
+  HARNESS_SANDBOX: scrub
+  HARNESS_HARD_CAP: "on"
+arms:
+  no_pause:
+    env: {HARNESS_AGENT_PAUSE: "off"}
+  pause:
+    env: {HARNESS_AGENT_PAUSE: "coding=6000,data_analysis=2500"}

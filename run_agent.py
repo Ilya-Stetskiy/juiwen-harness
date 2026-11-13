@@ -302,10 +302,18 @@ async def _run_phases(sched, cfg: Config, ledger: TokenLedger, journal: Journal,
         journal.event("recheck_phase", n=len(queue), spent=round(ledger.spent(), 1), budget=cfg.budget)
         await asyncio.gather(*[_recheck_worker(queue, cfg, ledger, journal, t_start) for _ in range(cfg.workers)])
     if state["deferred"]:
-        queue = list(state["deferred"])  # HARNESS_LATE_ORDER=fifo keeps the order in which the pipeline gave up
-        if os.environ.get("HARNESS_LATE_ORDER", "reward").lower() != "fifo":
+        # HARNESS_LATE_ORDER=rating (default): reward x P(agent solves | type) / mean agent cost (type), executor.AGENT_STATS;
+        # reward: highest reward first (before 2026-11-14); fifo: the order in which the pipeline gave up.
+        # The sort is stable: on a tie (same type and reward) the order in which the pipeline gave up stays.
+        queue = list(state["deferred"])
+        order = os.environ.get("HARNESS_LATE_ORDER", "rating").strip().lower()
+        if order == "reward":
             queue.sort(key=lambda x: -x[0].reward)
-        journal.event("late_phase", n=len(queue), spent=round(ledger.spent(), 1), budget=cfg.budget)
+        elif order != "fifo":
+            from harness.executor import agent_rating
+            queue.sort(key=lambda x: -agent_rating(x[0]))
+        journal.event("late_phase", n=len(queue), spent=round(ledger.spent(), 1), budget=cfg.budget, order=order,
+                      queue=[(x[0].task_id, x[0].task_type, x[0].reward) for x in queue[:20]])
         from harness import agent_pause
         agent_pause.PAUSER.setup(ledger, journal, cfg.budget)
         done = asyncio.Event()

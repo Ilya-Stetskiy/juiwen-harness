@@ -1,0 +1,33 @@
+id: exp-ab-late-est-dc20k
+name: ab_late_est_dc20k
+author: human
+hypothesis: >
+  The late phase reserves 6 000 tokens per coding agent run (FALLBACK_ESTIMATE), while the mean agent cost on coding is
+  3 943 (lab, 2 395 agent runs). In ab_agent_pause_dc20k the late phase started with ~10k left, so agents ran one by one,
+  the pause never had work, and the order of two equal-reward tasks decided the points. The arm reserves the measured mean
+  (HARNESS_LATE_EST=measured): two agents can start at once, a run past 6 000 pauses while the other goes on. Expect the
+  same or more points inside the budget (more deferred tasks get an attempt), risk: more runs cut by the hard cap.
+  Both arms: fighting profile, fallback late, pause on, late order rating. 3 repeats, 2 runs at once.
+change: HARNESS_LATE_EST=fixed|measured on top of e49fe86 + late order rating
+code_dir: /home/i.stetskii/harness-lab/autolab_worktrees/final_est
+backend: gateway
+model: auto
+set: dev_coding
+repeats: 3
+budget: 20000
+workers: 5
+fallback: late
+parallel_runs: 2
+priority: 5
+env:
+  HARNESS_RUN_MODE: economy
+  HARNESS_LIMITS: "on"
+  HARNESS_SANDBOX: scrub
+  HARNESS_HARD_CAP: "on"
+  HARNESS_AGENT_PAUSE: "coding=6000,data_analysis=2500"
+  HARNESS_LATE_ORDER: rating
+arms:
+  est_fixed:
+    env: {HARNESS_LATE_EST: fixed}
+  est_measured:
+    env: {HARNESS_LATE_EST: measured}

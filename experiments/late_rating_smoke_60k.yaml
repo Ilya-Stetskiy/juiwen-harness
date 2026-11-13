@@ -1,0 +1,25 @@
+id: exp-late-rating-smoke-60k
+name: late_rating_smoke_60k
+author: human
+hypothesis: >
+  Mechanics check of HARNESS_LATE_ORDER=rating (late queue ranked by reward x P(agent solves | type) / mean agent cost,
+  executor.AGENT_STATS) with the full fighting profile on the mixed set, where types differ: late_phase must log
+  order=rating and a queue sorted by rating; agents run, no errors. One run, not a points comparison.
+change: HARNESS_LATE_ORDER=rating (default) on top of e49fe86
+code_dir: /home/i.stetskii/harness-lab/autolab_worktrees/final_retry
+backend: gateway
+model: auto
+set: mixed100_dev
+repeats: 1
+budget: 60000
+workers: 5
+fallback: late
+priority: 5
+env:
+  HARNESS_RUN_MODE: economy
+  HARNESS_LIMITS: "on"
+  HARNESS_SANDBOX: scrub
+  HARNESS_HARD_CAP: "on"
+arms:
+  rating:
+    env: {HARNESS_LATE_ORDER: rating}

@@ -32,7 +32,25 @@ FALLBACK_ESTIMATE = {"coding": 6000.0, "math": 3000.0, "data_analysis": 4000.0, 
 
 
 def fallback_estimate(task_type: str) -> float:
+    """Tokens the late phase reserves for one agent run. HARNESS_LATE_EST=fixed (default): FALLBACK_ESTIMATE;
+    measured: the mean agent cost of the type from the lab (AGENT_STATS), so more agents can run at once on a tight rest
+    (ab_agent_pause_dc20k: with 6 000 per coding run the agents ran one by one and the pause never had work)."""
+    import os
+    if os.environ.get("HARNESS_LATE_EST", "fixed").strip().lower() == "measured" and task_type in AGENT_STATS:
+        return AGENT_STATS[task_type][1]
     return FALLBACK_ESTIMATE.get(task_type, 4000.0)
+
+
+# What the tool agent does on a task the pipeline already failed, by type: (P(solved), mean agent tokens). All 2 395 agent
+# runs of 142 lab experiments, answerable tasks only (FINDINGS_agent_budget.md, traj-analysis/agent_cost.py). The gbm
+# predictor knows only the pipeline (its estimate is 8-10x below the agent's real cost), so the late queue is ranked on these.
+AGENT_STATS = {"coding": (0.62, 3943.0), "math": (0.29, 2075.0), "data_analysis": (0.57, 1992.0), "search": (0.19, 554.0)}
+
+
+def agent_rating(task) -> float:
+    """reward x P(agent solves | type) / mean agent cost (type): the sorter's rating, on agent data. Per 1k tokens."""
+    p, cost = AGENT_STATS.get(task.task_type, (0.5, 3000.0))
+    return float(task.reward) * p / max(cost, 1.0) * 1000.0
 
 
 def route_model(task, model_name: str, journal=None) -> str:
