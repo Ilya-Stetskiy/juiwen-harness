@@ -1,0 +1,154 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 770" width="1200" height="770" font-family="Inter, 'Segoe UI', Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#141a2e"/>
+    </marker>
+    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c8642a"/>
+    </marker>
+    <style>
+      .t  { font-size: 17px; font-weight: 700; fill: #141a2e; }
+      .b  { font-size: 13px; fill: #4a5066; }
+      .tw { font-size: 17px; font-weight: 700; fill: #ffffff; }
+      .bw { font-size: 13px; fill: #c9cee0; }
+      .lb { font-size: 12px; font-weight: 600; fill: #c8642a; }
+      .lk { font-size: 12px; font-weight: 600; fill: #141a2e; }
+      .g  { font-size: 13px; fill: #6b6860; }
+      .gt { font-size: 15px; font-weight: 700; fill: #6b6860; }
+      .n  { font-size: 13px; fill: #141a2e; }
+      .nb { font-size: 13px; font-weight: 700; fill: #141a2e; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="770" fill="#f6f5f1"/>
+
+  <!-- title and legend -->
+  <text x="40" y="48" font-size="28" font-weight="700" fill="#141a2e">Схема работы харнесса</text>
+  <text x="40" y="72" font-size="14" fill="#4a5066">боевой режим economy: один вызов на задачу, агент — в конце очереди</text>
+  <rect x="770" y="34" width="14" height="14" rx="3" fill="#dff0ec" stroke="#2a8c7a"/>
+  <text x="790" y="46" class="b">0 токенов</text>
+  <rect x="870" y="34" width="14" height="14" rx="3" fill="#fde6d4" stroke="#c8642a"/>
+  <text x="890" y="46" class="b">вызов LLM</text>
+  <rect x="975" y="34" width="14" height="14" rx="3" fill="none" stroke="#9a978f" stroke-dasharray="3 2"/>
+  <text x="995" y="46" class="b">проверено, в бою выключено</text>
+
+  <!-- feedback: actual / predicted -->
+  <path d="M830,120 V100 H600 V118" fill="none" stroke="#c8642a" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#ao)"/>
+  <text x="640" y="94" class="lb">поправка «факт / прогноз» после каждой задачи</text>
+
+  <!-- row 1 -->
+  <rect x="40" y="120" width="200" height="110" rx="10" fill="#ffffff" stroke="#d9d6cc"/>
+  <text x="56" y="148" class="t">Задачи</text>
+  <text x="56" y="172" class="b">все task.json: тип,</text>
+  <text x="56" y="189" class="b">условие, файлы, reward</text>
+  <text x="56" y="206" class="b">(expected не читается)</text>
+
+  <rect x="270" y="120" width="200" height="110" rx="10" fill="#dff0ec" stroke="#2a8c7a"/>
+  <text x="286" y="148" class="t">Предиктор gbm</text>
+  <text x="286" y="172" class="b">цена p10 / p50 / p90</text>
+  <text x="286" y="189" class="b">и p_success на пару</text>
+  <text x="286" y="206" class="b">«задача × модель»</text>
+
+  <rect x="500" y="120" width="200" height="110" rx="10" fill="#dff0ec" stroke="#2a8c7a"/>
+  <text x="516" y="148" class="t">Сортировщик</text>
+  <text x="516" y="172" class="b">рейтинг reward × p / p50,</text>
+  <text x="516" y="189" class="b">выбор модели из четырёх,</text>
+  <text x="516" y="206" class="b">резерв бюджета</text>
+
+  <rect x="730" y="120" width="200" height="110" rx="10" fill="#fde6d4" stroke="#c8642a" stroke-width="2"/>
+  <text x="746" y="148" class="t">Конвейер · 1 вызов</text>
+  <text x="746" y="172" class="b">данные собирает харнесс,</text>
+  <text x="746" y="189" class="b">код модели запускает он;</text>
+  <text x="746" y="206" class="b">math — батч по 8 задач</text>
+
+  <rect x="960" y="120" width="200" height="110" rx="10" fill="#141a2e"/>
+  <text x="976" y="148" class="tw">answer.txt</text>
+  <text x="976" y="172" class="bw">пишется атомарно сразу</text>
+  <text x="976" y="189" class="bw">после решения: обрезка</text>
+  <text x="976" y="206" class="bw">по бюджету его не теряет</text>
+
+  <path d="M240,175 H268" stroke="#141a2e" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M470,175 H498" stroke="#141a2e" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M700,175 H728" stroke="#141a2e" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M930,175 H958" stroke="#141a2e" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- pipeline -> deferred -->
+  <path d="M845,230 V328" stroke="#141a2e" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="853" y="270" class="lk">не вышло</text>
+  <text x="853" y="286" class="lk">за 1 вызов</text>
+
+  <!-- pipeline -> no answer -->
+  <path d="M760,230 V300 H600 V328" fill="none" stroke="#141a2e" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="612" y="292" class="lk">невыполнима</text>
+
+  <!-- row 2 -->
+  <rect x="40" y="330" width="430" height="150" rx="10" fill="#ffffff" stroke="#d9d6cc"/>
+  <text x="56" y="356" class="t">Боевой прогон</text>
+  <text x="56" y="376" class="b">prod_fallback_late_60k · ветка late · 100 задач · бюджет 60 000</text>
+  <text x="56" y="400" class="n"><tspan class="nb">62</tspan> задачи — ровно 1 вызов · <tspan class="nb">24</tspan> math — 3 батча</text>
+  <text x="56" y="420" class="n"><tspan class="nb">8</tspan> coding с противоречием — 0 вызовов</text>
+  <text x="56" y="440" class="n">основная очередь — <tspan class="nb">39 256</tspan> токенов</text>
+  <text x="56" y="460" class="n">агент: <tspan class="nb">5</tspan> задач, <tspan class="nb">4</tspan> решены, <tspan class="nb">21 098</tspan> токенов · итог <tspan class="nb">214</tspan> очков</text>
+
+  <rect x="500" y="330" width="200" height="150" rx="10" fill="#ffffff" stroke="#d9d6cc"/>
+  <text x="516" y="356" class="t">Без ответа</text>
+  <text x="516" y="380" class="b">противоречивые тесты</text>
+  <text x="516" y="397" class="b">coding — 0 токенов;</text>
+  <text x="516" y="414" class="b">FINAL: UNSOLVABLE;</text>
+  <text x="516" y="431" class="b">агенту не хватило</text>
+  <text x="516" y="448" class="b">бюджета (unfunded)</text>
+
+  <rect x="730" y="330" width="200" height="150" rx="10" fill="#dff0ec" stroke="#2a8c7a"/>
+  <text x="746" y="356" class="t">Конец очереди</text>
+  <text x="746" y="380" class="b">задача ждёт, пока</text>
+  <text x="746" y="397" class="b">не пройдёт вся основная</text>
+  <text x="746" y="414" class="b">очередь; дальше — по</text>
+  <text x="746" y="431" class="b">рейтингу: награда × P</text>
+  <text x="746" y="448" class="b">агента / его цена (тип)</text>
+
+  <rect x="960" y="330" width="200" height="150" rx="10" fill="#fde6d4" stroke="#c8642a"/>
+  <text x="976" y="356" class="t">Агент DeepAgent</text>
+  <text x="976" y="380" class="b">с инструментами; старт,</text>
+  <text x="976" y="397" class="b">если остаток покрывает</text>
+  <text x="976" y="414" class="b">цену: coding 6k, DA 4k,</text>
+  <text x="976" y="431" class="b">math и search 3k;</text>
+  <text x="976" y="448" class="b">повтор вызова на 429/5xx;</text>
+  <text x="976" y="465" class="b">пауза: coding 6k, DA 2,5k</text>
+
+  <path d="M930,405 H958" stroke="#141a2e" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M1060,330 V232" stroke="#141a2e" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="1068" y="286" class="lk">решено</text>
+  <path d="M1060,480 V500 H600 V482" fill="none" stroke="#141a2e" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- budget band -->
+  <rect x="40" y="520" width="1120" height="84" rx="10" fill="#141a2e"/>
+  <text x="60" y="546" font-size="15" font-weight="700" fill="#ffffff">Общий счётчик бюджета под всеми блоками</text>
+  <text x="60" y="568" class="bw">цена = вход / 10 + выход по usage каждого ответа прокси · после 98% бюджета вызовы идут по одному, max_tokens не больше остатка</text>
+  <text x="60" y="588" class="bw">на 100% новые вызовы не начинаются (HARD_CAP) · задача не дольше 480 с · ключ API убран из окружения: его не видят код модели и агент</text>
+
+  <!-- disabled blocks -->
+  <text x="40" y="636" class="gt">Проверено в лаборатории и выключено в бою</text>
+  <rect x="40" y="648" width="265" height="100" rx="10" fill="none" stroke="#9a978f" stroke-dasharray="5 4"/>
+  <text x="56" y="674" class="t" fill="#6b6860" style="fill:#6b6860">Решатели без LLM</text>
+  <text x="56" y="696" class="g">DA +4,5, на проверке −5,0;</text>
+  <text x="56" y="713" class="g">math и search — шум;</text>
+  <text x="56" y="730" class="g">привязывают к виду задач</text>
+
+  <rect x="325" y="648" width="265" height="100" rx="10" fill="none" stroke="#9a978f" stroke-dasharray="5 4"/>
+  <text x="341" y="674" class="t" style="fill:#6b6860">Верификатор ответов</text>
+  <text x="341" y="696" class="g">+9,0 на знакомом наборе,</text>
+  <text x="341" y="713" class="g">−0,7 на новом;</text>
+  <text x="341" y="730" class="g">токенов в 1,7–1,9 раза больше</text>
+
+  <rect x="610" y="648" width="265" height="100" rx="10" fill="none" stroke="#9a978f" stroke-dasharray="5 4"/>
+  <text x="626" y="674" class="t" style="fill:#6b6860">Потолки цензора</text>
+  <text x="626" y="696" class="g">обрыв задачи по потолку:</text>
+  <text x="626" y="713" class="g">шум, на DA и search хуже;</text>
+  <text x="626" y="730" class="g">вопрос «решаемо ли?» −23,5</text>
+
+  <rect x="895" y="648" width="265" height="100" rx="10" fill="none" stroke="#9a978f" stroke-dasharray="5 4"/>
+  <text x="911" y="674" class="t" style="fill:#6b6860">Поиск инъекций (guard)</text>
+  <text x="911" y="696" class="g">14 наших атак: модель</text>
+  <text x="911" y="713" class="g">их почти не выполняет,</text>
+  <text x="911" y="730" class="g">вырезание (strip) не помогло</text>
+</svg>
