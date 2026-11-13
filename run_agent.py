@@ -159,7 +159,7 @@ async def _late_worker(wid: int, queue: list, cfg: Config, ledger: TokenLedger, 
             res = await (asyncio.wait_for(coro, cfg.max_task_seconds) if cfg.limits_on else coro)
             status, answer = res.status, res.answer
             if status == "solved" and answer:
-                write_answer(task.dir, answer)
+                write_answer(task.dir, guard.scrub_answer(answer, task.task_id, journal))   # the same rail as the main pass
                 state["solved"] += 1
         except asyncio.TimeoutError:
             status = "timeout"
@@ -182,7 +182,10 @@ def _prod_switches() -> dict:
 
 async def amain(tasks_dir: str) -> None:
     cfg = Config.from_env()
+    hidden = guard.hide_secrets()   # S12 sandbox layer: the API key leaves os.environ, only cfg keeps it
     journal = Journal(cfg.log_dir)
+    if hidden:
+        journal.event("secrets_hidden", names=hidden)
     ledger = TokenLedger()
     t_start = time.time()
     tasks = load_tasks(tasks_dir)

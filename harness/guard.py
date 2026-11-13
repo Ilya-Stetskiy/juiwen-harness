@@ -26,6 +26,26 @@ PATTERNS: dict[str, re.Pattern] = {
 # the task's own boilerplate legitimately mentions answer.txt, so the instruction is not checked for that kind
 INSTRUCTION_KINDS = ("override", "secret", "escape", "exfil")
 SECRET_ENV = ("LLM_API_KEY", "LLM_BASE_URL", "OPENAI_API_KEY")
+HIDDEN_ENV = ("LLM_API_KEY", "OPENAI_API_KEY")   # removed from os.environ by hide_secrets (LLM_BASE_URL is no credential)
+_SECRET_VALUES: list[str] = []                    # values seen at start, so scrub_answer works after they left os.environ
+
+
+def hide_secrets() -> list[str]:
+    """Sandbox layer (S12), independent of HARNESS_GUARD. Remembers the secret values for scrub_answer and removes the API
+    keys from os.environ right after Config.from_env() read them, so nothing started later inherits them: the agent's
+    bash / code tools (openjiuwen copies os.environ into every command), the pipelines' subprocesses, any model-written code.
+    Every model call takes the key from Config, not from the environment. HARNESS_HIDE_SECRETS=off keeps the old behaviour.
+    Returns the names removed (for the journal, never the values)."""
+    for name in SECRET_ENV:
+        val = os.environ.get(name, "")
+        if len(val) >= 6 and val not in _SECRET_VALUES:
+            _SECRET_VALUES.append(val)
+    if os.environ.get("HARNESS_HIDE_SECRETS", "on").strip().lower() == "off":
+        return []
+    removed = [n for n in HIDDEN_ENV if n in os.environ]
+    for n in removed:
+        del os.environ[n]
+    return removed
 
 
 def mode() -> str:
@@ -76,12 +96,13 @@ def inspect_task(task, journal) -> None:
 
 
 def scrub_answer(answer: str | None, task_id: str, journal) -> str | None:
-    """Remove secret values from an answer (any mode except off)."""
-    if mode() == "off" or not answer:
+    """Remove secret values from an answer before it is written. Always on, whatever HARNESS_GUARD is (it costs nothing and
+    a leaked key in answer.txt is never a right answer); HARNESS_SCRUB_ANSWER=off switches it off."""
+    if not answer or os.environ.get("HARNESS_SCRUB_ANSWER", "on").strip().lower() == "off":
         return answer
+    vals = list(_SECRET_VALUES) + [os.environ.get(n, "") for n in SECRET_ENV]
     out = answer
-    for name in SECRET_ENV:
-        val = os.environ.get(name, "")
+    for val in vals:
         if len(val) >= 6 and val in out:
             out = out.replace(val, "[removed]")
             journal.event("guard", task=task_id, places={"answer": ["secret_value"]}, action="scrub")
