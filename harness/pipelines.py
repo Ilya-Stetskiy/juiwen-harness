@@ -152,6 +152,15 @@ async def data_analysis(ctx: CallContext):
     return None if ans is None else ("solved", normalize(ctx.task.check, ans))
 
 
+def _topk_factor() -> float:
+    """HARNESS_SEARCH_TOPK_FACTOR (default 1): multiplies the number of kb fragments in the search answer prompt."""
+    try:
+        f = float(os.environ.get("HARNESS_SEARCH_TOPK_FACTOR", "1") or 1)
+    except ValueError:
+        return 1.0
+    return f if f > 0 else 1.0
+
+
 def _read_kb(ws: Path, question: str) -> str | None:
     files = sorted(p for p in ws.rglob("*") if p.is_file())
     docs = []
@@ -160,6 +169,7 @@ def _read_kb(ws: Path, question: str) -> str | None:
             docs.append((p, p.read_text(encoding="utf-8", errors="replace")))
         except OSError:
             continue
+    all_docs = list(docs)
     total = sum(len(t) for _, t in docs)
     if total > MAX_CONTEXT_CHARS:
         # large base: keep files that mention a capitalised word of the question
@@ -169,6 +179,17 @@ def _read_kb(ws: Path, question: str) -> str | None:
             return None
     if not docs:
         return None
+    factor = _topk_factor()
+    if factor != 1.0:
+        import math as _math
+        k = max(1, int(_math.ceil(len(docs) * factor - 1e-9)))
+        if k < len(docs):
+            docs = docs[:k]
+        elif k > len(docs):
+            chosen = {p for p, _ in docs}
+            extra = [(p, t) for p, t in all_docs if p not in chosen][: k - len(docs)]
+            keep = chosen | {p for p, _ in extra}
+            docs = [(p, t) for p, t in all_docs if p in keep]   # same (file) order as before
     return guard.sanitize("\n\n".join(f"## {p.name}\n{t.strip()}" for p, t in docs))
 
 
