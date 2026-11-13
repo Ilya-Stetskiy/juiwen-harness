@@ -487,6 +487,17 @@ def push_stack() -> tuple[bool, str]:
     return True, f"pushed to {STACK} on GitHub"
 
 
+def _stack_arm(base: str) -> str:
+    """The arm whose switches go to the stack: the arm with the lab accept, else (a confirmed strong clarify) the arm with the best measured difference.
+    Without it the item got an empty env and its code ran inert (ab_srch_kb_topk_x2_27b_bridge_20k)."""
+    ver = al.meta(base).get("verdict") or {}
+    arm = next((a for a, v in ver.items() if v == "accept"), "")
+    if not arm:
+        best = _arm_stats(base)
+        arm = best[0] if best else ""
+    return arm
+
+
 def stack_add(name: str) -> tuple[bool, str]:
     """Policy -> the patch on the stack worktree (host) -> GitHub auto/stack. The hypothesis stays undecided: a human decides with `принять стек`."""
     base = al.family_base(name)
@@ -513,8 +524,7 @@ def stack_add(name: str) -> tuple[bool, str]:
         err = _apply_patch(al.stack_wt(), pf, f"autolab chief: {base} ({info['commit']})")
         if err:
             return False, "on the stack: " + err
-    ver = al.meta(base).get("verdict") or {}
-    arm = next((a for a, v in ver.items() if v == "accept"), "")
+    arm = _stack_arm(base)
     st["items"].append({"name": base, "arm": arm, "env": _item_env(base, arm), "commit": info.get("commit") or "", "no_code": bool(info.get("no_code")),
                         "cells": info.get("cells") or [], "active": True, "added": time.strftime("%Y-%m-%d %H:%M")})
     st.setdefault("ops", []).append({"op": "add", "name": base})
@@ -1611,7 +1621,10 @@ def selftest() -> None:
             (al.DRAFTS / f).unlink()
     al.set_meta("ab_win", verdict={"b": "clarify"}, result=res_ok(12.0))
     assert any("not a confirmed" in w for w in accept_policy("ab_win")[1])       # the lower bound 1.0 .. is fine but no repeat
+    al.set_meta("ab_win", verdict={"b": "clarify"}, result=res_ok(12.0))
+    assert _stack_arm("ab_win") == "b" and _item_env("ab_win", _stack_arm("ab_win")) == {"HARNESS_SORTER": "fifo"}     # a strong clarify brings its switch to the stack too
     al.set_meta("ab_win", verdict={"b": "accept"}, result=res_ok(12.0))
+    assert _stack_arm("ab_win") == "b"
 
     # auto accept: a branch on a local bare "GitHub", never master
     bare, seed = tmp / "bare.git", tmp / "seed"
