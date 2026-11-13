@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import tempfile
 import time
@@ -350,6 +351,61 @@ async def _verify_loop(ctx, pipeline, task, model_name, pred, cfg, ledger, journ
     return status, answer
 
 
+def agent_retry_on() -> bool:
+    """HARNESS_AGENT_RETRY=on (default) | off. The whole agent run is ONE attempt of `guarded`, and `guarded` never repeats
+    a task that already paid tokens, so a 429 on step k of the agent used to end the task with an error (prod_fallback_late_60k:
+    2 tasks, ~7k tokens lost). With `on` every single model call INSIDE the agent is repeated on 429 / 5xx only."""
+    import os
+    return os.environ.get("HARNESS_AGENT_RETRY", "on").strip().lower() != "off"
+
+
+_STATUS_RE = re.compile(r"Error code:\s*(\d{3})")
+
+
+def _rate_retry_rail(task_id: str, model_name: str, journal, ledger):
+    """Repeats ONE model call inside the agent when the gateway refused it: 429 (key-parallel / rpm window; pause = the
+    "retry in N s" of the message, 60 s by default, shared with every other call through llm._COOLDOWN_UNTIL) or 5xx
+    (2, 4, 8 s), up to 3 times per call. A refused request generates nothing, so the repeat is not billed twice. Not
+    repeated: timeouts and anything without such a status (the proxy may have billed them), and nothing after the hard cap.
+    openjiuwen's own ModelAnomalyDetectionRail cannot do this: openjiuwen re-raises the SDK error as FrameworkError with the
+    context suppressed, so the rail sees no status and no Retry-After and would repeat everything after 2-8 s."""
+    import time
+
+    from openjiuwen.core.single_agent.rail.base import AgentRail
+
+    from . import llm, rpm
+
+    class RateRetryRail(AgentRail):
+        def __init__(self) -> None:
+            super().__init__()
+            self.count = 0
+
+        async def on_model_exception(self, ctx) -> None:
+            exc = getattr(ctx, "exception", None)
+            if exc is None or getattr(ledger, "capped", False):
+                return
+            text = type(exc).__name__ + " " + str(exc)
+            m = _STATUS_RE.search(text)
+            code = 429 if rpm.is_429(exc) else (int(m.group(1)) if m else None)
+            if code is None or not (code == 429 or code >= 500) or self.count >= 3:
+                self.count = 0
+                return
+            wait = llm._retry_after(exc) if code == 429 else 2.0 * (2 ** self.count)
+            if code == 429:
+                llm._COOLDOWN_UNTIL = max(llm._COOLDOWN_UNTIL, time.monotonic() + wait)
+            self.count += 1
+            try:
+                journal.event("agent_retry", task=task_id, model=model_name, status=code, attempt=self.count, wait=wait)
+            except Exception:  # noqa: BLE001
+                pass
+            ctx.request_retry(delay_seconds=wait)
+
+        async def after_model_call(self, ctx) -> None:   # a call went through: the next refusal gets the full retry budget
+            self.count = 0
+
+    return RateRetryRail()
+
+
 async def run_agent_task(task: TaskInfo, model_name: str, pred: Prediction, cfg: Config,
                          ledger: TokenLedger, journal: Journal) -> ExecResult:
     from openjiuwen.core.foundation.llm.model import Model
@@ -393,13 +449,14 @@ async def run_agent_task(task: TaskInfo, model_name: str, pred: Prediction, cfg:
             card=card,
             system_prompt=profile["system_prompt"],
             rails=[_make_tools_rail(list(profile.get("tools", []))),
-                   CensorRail(task.task_id, model_name, ledger, journal, pred)],
+                   CensorRail(task.task_id, model_name, ledger, journal, pred)]
+                  + ([_rate_retry_rail(task.task_id, model_name, journal, ledger)] if agent_retry_on() else []),
             sys_operation=sysop,
             cwd=str(ws),
             max_iterations=int(profile.get("max_iterations", 10)),
             enable_read_image_multimodal=False,  # otherwise DeepAgent sends a hidden probe request
             enable_security_rail=False,
-            enable_model_anomaly_detection_rail=False,
+            enable_model_anomaly_detection_rail=False,   # the default one also retries timeouts (may be billed twice); ours is below
             restrict_to_work_dir=True,
         )
         query = {"query": task.instruction + FOOTER}

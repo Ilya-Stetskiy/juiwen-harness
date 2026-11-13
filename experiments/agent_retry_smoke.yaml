@@ -1,0 +1,26 @@
+id: exp-agent-retry-smoke
+name: agent_retry_smoke
+author: human
+hypothesis: >
+  Smoke check of HARNESS_AGENT_RETRY=on (executor._rate_retry_rail): every task goes straight to the tool agent
+  (HARNESS_MODE=agent) under the fighting profile, so the agent calls meet the gateway key-parallel 429. Expect
+  agent_retry events followed by successful calls of the same task and no task_error from 429.
+change: executor._rate_retry_rail (429/5xx retry of single agent calls) on top of 81562c2
+code_dir: /home/i.stetskii/harness-lab/autolab_worktrees/final_retry
+backend: gateway
+model: auto
+set: nrw_coding_cg_multi_bug
+repeats: 1
+budget: 20000
+workers: 5
+fallback: "on"
+priority: 5
+env:
+  HARNESS_RUN_MODE: economy
+  HARNESS_LIMITS: "on"
+  HARNESS_SANDBOX: scrub
+  HARNESS_HARD_CAP: "on"
+  HARNESS_MODE: agent
+arms:
+  retry_on:
+    env: {HARNESS_AGENT_RETRY: "on"}

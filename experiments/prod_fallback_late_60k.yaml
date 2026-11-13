@@ -1,0 +1,31 @@
+id: exp-prod-fallback-late-60k
+name: prod_fallback_late_60k
+author: human
+hypothesis: >
+  First run of the exact Dockerfile fighting profile (economy + LIMITS=on + SANDBOX=scrub + HARD_CAP=on), never measured
+  before: every earlier lab run had limits, hard cap and sandbox off. Arm prod_late adds HARNESS_FALLBACK=late: the tool
+  agent runs after the main queue, highest reward first, only while the budget covers its expected cost. In the
+  trajectories of 2026-11-13 the immediate agent (fallback=on) took 15-65% of the spend on 3-6 tasks, was underpredicted
+  8-10x and pushed runs past the budget (economy 60k spent 66-77k). Expect: same or more points INSIDE the budget for
+  prod_late, fewer tokens; prod_on should now stop at the budget (hard cap) instead of overshooting.
+  ab_fallback_late_30k (2 repeats) gave +2.5 [-17; +21] points and -24% tokens. Judge by points inside the budget.
+change: HARNESS_FALLBACK=on|late on top of the Dockerfile fighting profile, code 81562c2 (snapshot, not the deployed lab code)
+code_dir: /home/i.stetskii/harness-lab/autolab_worktrees/final_81562c2
+backend: gateway
+model: auto
+set: mixed100_dev
+repeats: 1
+budget: 60000
+workers: 5
+fallback: "on"
+priority: 5
+env:
+  HARNESS_RUN_MODE: economy
+  HARNESS_LIMITS: "on"
+  HARNESS_SANDBOX: scrub
+  HARNESS_HARD_CAP: "on"
+arms:
+  prod_on:
+    env: {HARNESS_FALLBACK: "on"}
+  prod_late:
+    env: {HARNESS_FALLBACK: late}

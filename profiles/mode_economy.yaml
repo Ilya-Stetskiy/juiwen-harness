@@ -7,3 +7,8 @@ env:
   HARNESS_BATCH_TYPES: math
   HARNESS_TOKENIZER: "on"
   HARNESS_VERIFY: "off"          # no verifier, no recheck
+  HARNESS_FALLBACK: late         # tool agent after the main queue, highest reward first, only if the rest covers it.
+                                 # prod_fallback_late_60k (fighting profile, 1 repeat): agent tasks 12 points vs 5 with `on`
+                                 # (on: 2 agent tasks lost to 429, 1 cut by the cap); ab_fallback_late_30k: -24% tokens.
+                                 # NB: lab.py always sets HARNESS_FALLBACK from the experiment's `fallback:`, so in lab runs
+                                 # the experiment value wins over this line.
